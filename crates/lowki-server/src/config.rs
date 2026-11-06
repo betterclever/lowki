@@ -144,6 +144,8 @@ pub struct Config {
     pub cookie_partitioned: bool,
     pub trust_proxy_headers: bool,
     pub limits: RateLimits,
+    /// ENSIP-30 stealth gateway; `None` unless `LOWKI_ENS_GATEWAY=true`.
+    pub ens_gateway: Option<crate::ens_gateway::GatewayConfig>,
 }
 
 fn env(name: &str) -> Option<String> {
@@ -217,6 +219,7 @@ impl Config {
             cookie_partitioned: false,
             trust_proxy_headers: false,
             limits: RateLimits::default(),
+            ens_gateway: None,
         }
     }
 
@@ -350,6 +353,7 @@ impl Config {
             cookie_partitioned: env_bool("LOWKI_COOKIE_PARTITIONED", false)?,
             trust_proxy_headers: env_bool("LOWKI_TRUST_PROXY_HEADERS", false)?,
             limits,
+            ens_gateway: crate::ens_gateway::GatewayConfig::from_env()?,
         })
     }
 

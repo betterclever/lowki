@@ -36,6 +36,10 @@ anyhow = "1"
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
 async-trait = "0.1"
+# ENSIP-30 stealth gateway (src/ens_gateway.rs)
+lowki-ens = { path = "../lowki-ens" }
+lowki-stealth = { path = "../lowki-stealth" }
+zeroize = "1.8"
 
 [dev-dependencies]
 rsa = "0.9"

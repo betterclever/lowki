@@ -572,6 +572,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e079f19b08ca6239f47f8ba8509c11cf3ea30095831f7fed61441475edd8c449"
 
 [[package]]
+name = "ens-normalize"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0122eb65f97557f03a51c5c02ab80f0d8143a96db469b13007f34dd21398c06"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1167,6 +1177,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "k256"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6e3919bbaa2945715f0bb6d3934a173d1e9a59ac23767fbaaef277265a7411b"
+dependencies = [
+ "cfg-if",
+ "ecdsa",
+ "elliptic-curve",
+ "sha2",
+]
+
+[[package]]
+name = "keccak"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb26cec98cce3a3d96cbb7bced3c4b16e3d13f27ec56dbd62cbc8f39cfb9d653"
+dependencies = [
+ "cpufeatures 0.2.17",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1266,6 +1297,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
+name = "lowki-ens"
+version = "0.1.0"
+dependencies = [
+ "ens-normalize",
+ "k256",
+ "lowki-stealth",
+ "serde_json",
+ "zeroize",
+]
+
+[[package]]
 name = "lowki-server"
 version = "0.1.0"
 dependencies = [
@@ -1279,6 +1321,8 @@ dependencies = [
  "hmac",
  "jsonwebtoken",
  "lettre",
+ "lowki-ens",
+ "lowki-stealth",
  "p256",
  "rand 0.8.8",
  "reqwest",
@@ -1297,6 +1341,18 @@ dependencies = [
  "url",
  "uuid",
  "webauthn-rs",
+ "zeroize",
+]
+
+[[package]]
+name = "lowki-stealth"
+version = "0.1.0"
+dependencies = [
+ "hmac",
+ "k256",
+ "sha2",
+ "sha3",
+ "zeroize",
 ]
 
 [[package]]
@@ -2164,6 +2220,16 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "digest",
+]
+
+[[package]]
+name = "sha3"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77fd7028345d415a4034cf8777cd4f8ab1851274233b45f84e3d955502d93874"
+dependencies = [
+ "digest",
+ "keccak",
 ]
 
 [[package]]

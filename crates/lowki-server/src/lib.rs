@@ -9,6 +9,7 @@ pub mod config;
 pub mod crypto;
 pub mod db;
 pub mod email;
+pub mod ens_gateway;
 pub mod error;
 pub mod oidc;
 pub mod passkey;
@@ -61,6 +62,8 @@ pub struct Inner {
     pub jwt: KeyStore,
     pub app_origins: RwLock<HashSet<String>>,
     pub http: reqwest::Client,
+    /// ENSIP-30 stealth gateway (`LOWKI_ENS_GATEWAY=true`).
+    pub ens: Option<ens_gateway::Gateway>,
 }
 
 pub type AppState = Arc<Inner>;
@@ -135,6 +138,7 @@ pub async fn build_state(config: Config, otp_sender: Option<Arc<dyn OtpSender>>)
         .timeout(Duration::from_secs(10))
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
+    let ens = config.ens_gateway.clone().map(ens_gateway::Gateway::new);
     let state = Arc::new(Inner {
         config,
         db,
@@ -146,6 +150,7 @@ pub async fn build_state(config: Config, otp_sender: Option<Arc<dyn OtpSender>>)
         jwt: KeyStore::default(),
         app_origins: RwLock::new(HashSet::new()),
         http,
+        ens,
     });
     apps::refresh_origin_cache(&state)
         .await
@@ -220,13 +225,20 @@ pub fn router(state: AppState) -> Router {
         .merge(token_api)
         .merge(public)
         .merge(admin)
+        .merge(ens_gateway::router())
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn(security_headers))
         // Log method and path only: query strings can carry OAuth codes and state.
         .layer(TraceLayer::new_for_http().make_span_with(
-            |req: &Request<_>| tracing::info_span!("http", method = %req.method(), path = %req.uri().path()),
+            |req: &Request<_>| tracing::info_span!("http", method = %req.method(), path = %log_path(req.uri().path())),
         ))
         .with_state(state)
+}
+
+/// The path as logged. ENS gateway GET paths carry the looked-up name in their calldata, so
+/// they are cut to the route.
+fn log_path(path: &str) -> &str {
+    if path.starts_with("/v1/ens/gateway/") { "/v1/ens/gateway/{sender}/{data}" } else { path }
 }
 
 async fn security_headers(req: axum::extract::Request, next: middleware::Next) -> Response {

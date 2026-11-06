@@ -221,6 +221,120 @@ The integration tests (`tests/api.rs`) run the server in-process against a **moc
 - linking and unlinking methods;
 - the admin and app APIs.
 
+## ENS stealth gateway (ENSIP-30, CCIP-Read)
+
+`src/ens_gateway.rs` turns lowki-server into the ERC-3668 gateway behind `<label>.lowki.eth`
+names. The names use Fluidkey's `StealthResolver` in **verified** mode (see
+`contracts/README.md`): for an address lookup the resolver reverts with `OffchainLookup` to this
+gateway, the gateway answers with a fresh stealth address plus the data needed to check it, and
+the resolver's callback re-derives the address on chain from the name's published meta-address.
+If the gateway lies, resolution reverts. Wallets need nothing special: plain viem
+`getEnsAddress({ name })` gets a new address on every lookup.
+
+### Enable it
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LOWKI_ENS_GATEWAY` | `false` | Turns the gateway on |
+| `LOWKI_ENS_RPC_URL` | **required** | JSON-RPC of the ENS chain (Sepolia). May contain an API key; it is never logged. |
+| `LOWKI_ENS_UNIVERSAL_RESOLVER` | **required** | From `contracts/deployments/sepolia-ensv2.json` (`.ens.UniversalResolver`) |
+| `LOWKI_ENS_PARENT` | **required** | e.g. `lowki.eth`. Served names are exactly one label below it. |
+| `LOWKI_ENS_STEALTH_RESOLVER` | unset | If set (recommended; `.StealthResolver` in `contracts/deployments/sepolia-lowki.json`), the name must resolve through it (checked on chain). The request's `sender` is not checked: through the UniversalResolver's batching it is the UR proxy, and it is unauthenticated anyway. |
+| `LOWKI_ENS_LOOKUPS_PER_MIN_IP` | `30` | Lookups per client IP per minute |
+| `LOWKI_ENS_LOOKUPS_PER_HOUR_NAME` | `600` | Lookups per name per hour (bounds how fast anyone can grow a recipient's record list) |
+| `LOWKI_ENS_RECORDS_PER_MIN_IP` | `30` | Records-endpoint calls per IP per minute |
+| `LOWKI_ENS_META_CACHE_SECS` | `30` | How long an on-chain meta-address read is reused |
+| `LOWKI_ENS_AUTH_SKEW_SECS` | `300` | Accepted clock skew on records-auth timestamps |
+| `LOWKI_ENS_RECORDS_PAGE` | `500` | Records per response (page with `since`) |
+
+The URL written on chain (`StealthResolver.setConfig`) is `https://<host>/v1/ens/gateway`, the
+POST form: clients send `{"sender","data"}` in the body, so looked-up names never appear in URLs
+or proxy access logs. The EIP-3668 GET form `https://<host>/v1/ens/gateway/{sender}/{data}.json`
+works too; the server logs its path as the route only.
+
+### Endpoints
+
+| Method and path | Auth | Purpose |
+|---|---|---|
+| `POST /v1/ens/gateway` (`{sender, data}`) and `GET /v1/ens/gateway/{sender}/{data}.json` | none (CORS `*`, as ERC-3668 requires) | `data` must be `resolve(bytes name, bytes addrCall)` for `<label>.<parent>` with `addr(node)` or `addr(node, coinType)` (EVM coin types only). Answers `{"data": abi.encode(address stealthAddress, bytes verificationData)}`, `verificationData = e ‖ S.x ‖ S.y` (Scheme1Verifier's format), `Cache-Control: no-store`. Errors are `{"message"}` with 4xx/5xx. |
+| `GET /v1/ens/records?name=<name>&since=<unix>` | `x-lowki-auth-timestamp: <unix>` and `x-lowki-auth-signature: 0x<65 bytes>`: EIP-191 `personal_sign` by the name's **viewing key** of `"Lowki stealth records\nname: <name>\ntimestamp: <unix>"` (`lowki_ens::stealth::records_auth_message`) | `{name, scheme_id, records: [{stealth_address, coin_type, ephemeral_pubkey, view_tag, created_at}], complete}` |
+
+Per lookup the gateway:
+
+1. checks the calldata, the name (one normalized label under the parent), the node
+   and the coin type, then the per-IP and per-name limits;
+2. reads `data(node, "stealth-meta-address[1][<coinType>]")` **on chain** through the
+   UniversalResolver, and checks that the answering resolver is the configured `StealthResolver`. Names without the record are refused: Lowki serves verified mode only;
+3. draws an ephemeral key from the OS RNG, derives the address with lowki-stealth
+   (`lowki_ens::stealth::gateway_derive`), and builds the verification data;
+4. stores `(stealth address, HMAC(name), coin type, ephemeral public key, view tag, time)` and
+   answers only after the insert succeeds (ENSIP-30 §6: the recipient must be able to find every
+   address the gateway hands out). The ephemeral private key is dropped after the response is
+   built; it is never stored or logged.
+
+**Why the records endpoint is authenticated by the viewing key.** The records are useful exactly
+to whoever can scan them, which is whoever holds the viewing key. Signing with it proves that
+without a Lowki session or the name-owner key, and lets a watch-only scanner (viewing key only)
+fetch them. The server takes the viewing public key from the on-chain meta-address, so a
+rotation of the record rotates access too (records created under an old meta-address are then
+reachable only through the database).
+
+### Does the gateway post ERC-5564 announcements? No.
+
+Measured on the Sepolia fork, `Announcer.announce` costs **33,688 gas** with a view-tag-only
+metadata byte and **35,736 gas** with the 57-byte ETH metadata layout, about 0.00002 ETH per
+lookup at a 0.65 gwei mainnet base fee. The gateway would have to pay that for every lookup,
+and:
+
+- **Lookups are not payments.** Resolution is a free `eth_call`; most lookups (wallet previews,
+  address-book refreshes, retries) are never paid. Announcing each one pays for nothing, and lets
+  anyone drain the operator's gas budget by calling `getEnsAddress` in a loop.
+- **Privacy gets worse, not better.** Every announcement would come from the gateway's address,
+  tagging each announced stealth address as "a lowki.eth payment address" on chain and splitting
+  it from the shared Announcer anonymity set. Announcing at lookup time also puts the lookup's
+  timestamp on chain, next to the payment that follows it.
+- **Detection does not need it.** The recipient finds payments from the gateway records (above),
+  which ENSIP-30 §6 explicitly allows ("for example by deriving ephemeral secrets that the
+  recipient can regenerate, or by publishing the ERC-5564 announcement"). Senders who derive
+  client-side (the record's flag permits it) announce themselves, as ERC-5564 intends.
+
+The cost of this choice is availability: if the gateway's database is lost, payments to addresses
+it handed out can only be found by scanning chain state (balances) with the viewing key, which
+needs the ephemeral public keys. Back up `ens_stealth_records`.
+
+### What the gateway operator learns
+
+Plainly, whoever runs this gateway (or can read its traffic or database) learns:
+
+- **Every lookup:** which name, when, from which IP (IPs are used for rate limiting in memory and
+  are not stored), and for which chain.
+- **Every address handed out for a name.** The operator can link all of a name's stealth addresses
+  to each other and to the name, and so watch every payment to them on chain. Stealth addresses
+  hide the recipient from the public and from senders of other payments, **not from the gateway
+  operator**. Senders who want the operator out of the picture derive client-side from the
+  on-chain record (ENSIP-30 §3).
+- **The ephemeral private key of each answer** (it is in the response, as the on-chain verifier
+  needs it). Together with the public viewing key this gives nothing beyond the address the
+  operator already chose; combined with one leaked stealth private key it would give the spending
+  key, which is why it is never stored.
+
+The operator **cannot**: spend (no spending or viewing private key), redirect funds (verified mode:
+the chain rejects any address not derived from the published meta-address), or read the records
+without the viewing key through the API. It **can**: refuse or delay lookups (availability), or
+reuse an ephemeral key to hand the same address to two senders, linking their payments (ENSIP-30
+calls this out; it cannot be prevented on chain).
+
+The database stores names only as `HMAC(server key, "lowki/ens-name/v1" ‖ name)`. Logs contain
+method and route only: no names, addresses, calldata or keys.
+
+### Tests
+
+`src/ens_gateway.rs` unit tests (name and coin-type rules, redacted config `Debug`) and
+`tests/ens_gateway.rs` (the HTTP surface against a mock JSON-RPC chain: verified-answer format
+re-checked with lowki-ens' verifier, a new address per lookup, records stored, refusals, records
+auth by viewing key, rate limits). The full flow against real contracts is
+`contracts/e2e/run.sh`.
+
 ## Google Cloud setup (operator)
 
 1. In Google Cloud Console, open **APIs & Services → OAuth consent screen**. Choose External, set the app name, and the only scope needed is `openid`. Publish the app; while it's in "Testing", only test users can sign in.

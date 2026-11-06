@@ -6,7 +6,10 @@ use sqlx::{AnyPool, any::AnyPoolOptions};
 
 pub type Db = AnyPool;
 
-const MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("../migrations/0001_init.sql"))];
+const MIGRATIONS: &[(i64, &str)] = &[
+    (1, include_str!("../migrations/0001_init.sql")),
+    (2, include_str!("../migrations/0002_ens_gateway.sql")),
+];
 
 pub fn now() -> i64 {
     std::time::SystemTime::now()
