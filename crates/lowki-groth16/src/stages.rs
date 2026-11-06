@@ -71,6 +71,20 @@ impl CircuitProver {
         .map_err(|e| Error::Proof(e.to_string()))
     }
 
+    /// The witness map's starting vectors `a`, `b` (secret); the GPU runs the rest of it.
+    #[cfg(feature = "webgpu")]
+    pub(crate) fn qap_inputs(&self, w: &[Fr]) -> (Zeroizing<Vec<Fr>>, Zeroizing<Vec<Fr>>) {
+        let m = &self.matrices;
+        let (a, b) = crate::qap::constraint_evaluations(
+            m,
+            m.num_instance_variables,
+            m.num_constraints,
+            w,
+            self.pk.h_query.len(),
+        );
+        (Zeroizing::new(a), Zeroizing::new(b))
+    }
+
     /// The parsed proving key (exposed for differential tests of GPU MSMs).
     #[doc(hidden)]
     pub fn proving_key(&self) -> &ark_groth16::ProvingKey<Bn254> {

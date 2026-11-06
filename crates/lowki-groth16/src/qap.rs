@@ -1,7 +1,8 @@
 //! snarkjs' R1CS-to-QAP witness map, from `ark-circom` 0.5.0 `src/circom/qap.rs`
 //! (MIT/Apache-2.0, <https://github.com/arkworks-rs/circom-compat>), unchanged apart from
-//! formatting. snarkjs zkeys bake this mapping into `h_query`, so proofs built with
-//! arkworks' default `LibsnarkReduction` would NOT verify.
+//! formatting, and the constraint evaluation split out into [`constraint_evaluations`] (the
+//! WebGPU prover runs the FFT part on the GPU). snarkjs zkeys bake this mapping into `h_query`,
+//! so proofs built with arkworks' default `LibsnarkReduction` would NOT verify.
 use ark_ff::PrimeField;
 use ark_groth16::r1cs_to_qap::{LibsnarkReduction, R1CSToQAP, evaluate_constraint};
 use ark_poly::EvaluationDomain;
@@ -16,6 +17,36 @@ use rayon::prelude::*;
 /// in a domain twice as large and the witness map is computed as the odd coefficients of (AB-C)
 /// in that domain. This serves as HZ when computing the C proof element.
 pub struct CircomReduction;
+
+/// The domain-size vectors `a` (with the public inputs appended) and `b` that start the witness
+/// map; `c = a ∘ b` (`b` is zero on the input rows).
+pub(crate) fn constraint_evaluations<F: PrimeField>(
+    matrices: &ConstraintMatrices<F>,
+    num_inputs: usize,
+    num_constraints: usize,
+    full_assignment: &[F],
+    domain_size: usize,
+) -> (Vec<F>, Vec<F>) {
+    let zero = F::zero();
+    let mut a = vec![zero; domain_size];
+    let mut b = vec![zero; domain_size];
+
+    cfg_iter_mut!(a[..num_constraints])
+        .zip(cfg_iter_mut!(b[..num_constraints]))
+        .zip(cfg_iter!(&matrices.a))
+        .zip(cfg_iter!(&matrices.b))
+        .for_each(|(((a, b), at_i), bt_i)| {
+            *a = evaluate_constraint(at_i, full_assignment);
+            *b = evaluate_constraint(bt_i, full_assignment);
+        });
+
+    {
+        let start = num_constraints;
+        let end = start + num_inputs;
+        a[start..end].clone_from_slice(&full_assignment[..num_inputs]);
+    }
+    (a, b)
+}
 
 impl R1CSToQAP for CircomReduction {
     #[allow(clippy::type_complexity)]
@@ -36,23 +67,8 @@ impl R1CSToQAP for CircomReduction {
         let domain = D::new(num_constraints + num_inputs).ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
         let domain_size = domain.size();
 
-        let mut a = vec![zero; domain_size];
-        let mut b = vec![zero; domain_size];
-
-        cfg_iter_mut!(a[..num_constraints])
-            .zip(cfg_iter_mut!(b[..num_constraints]))
-            .zip(cfg_iter!(&matrices.a))
-            .zip(cfg_iter!(&matrices.b))
-            .for_each(|(((a, b), at_i), bt_i)| {
-                *a = evaluate_constraint(at_i, full_assignment);
-                *b = evaluate_constraint(bt_i, full_assignment);
-            });
-
-        {
-            let start = num_constraints;
-            let end = start + num_inputs;
-            a[start..end].clone_from_slice(&full_assignment[..num_inputs]);
-        }
+        let (mut a, mut b) =
+            constraint_evaluations(matrices, num_inputs, num_constraints, full_assignment, domain_size);
 
         let mut c = vec![zero; domain_size];
         cfg_iter_mut!(c[..num_constraints])
