@@ -351,3 +351,10 @@ h1:focus, h1:focus-visible { outline: none; }
   .skel { animation: none; }
   .spinner { animation-duration: 1.6s; }   /* keep loading visible, calmer */
 }
+
+/* Chain connection status on Home: Anon-RPC ("Private connection") or direct, with why. */
+.conn { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-top: var(--lk-space-2); font-size: 12px; color: var(--lk-text-muted); }
+.conn strong { font-weight: 600; color: var(--lk-text); }
+.conn .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lk-warning); align-self: center; flex: none; }
+.conn.private .conn-dot { background: var(--lk-success); }
+.conn .conn-detail { flex-basis: 100%; padding-left: 15px; }

@@ -5,9 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <meta name="referrer" content="no-referrer" />
-    <!-- No third-party origins: fonts, icons and code are all served from Lowki. -->
+    <!-- No third-party code: fonts, icons and code are all served from Lowki. connect-src is
+         open to https/wss because Anon-RPC's harness fetches its hash-pinned client bundle and
+         reaches its network from a null-origin sandboxed iframe that inherits this policy (and
+         runs its worker from a blob: URL); the RPC itself is reached from the anon network's
+         exits, not from this page. http://localhost:* is the local demo stack (direct mode). -->
     <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://ethereum-sepolia-rpc.publicnode.com; worker-src 'self'; form-action 'none'; base-uri 'none'" />
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' https: wss: http://localhost:* blob: data:; worker-src 'self' blob:; form-action 'none'; base-uri 'none'" />
     <title>Lowki</title>
     <link data-trunk rel="rust" data-bin="lowki-wallet-ui" data-type="main" />
     <!-- Design tokens and logos come straight from design/ (single source). -->
@@ -20,6 +24,10 @@
     <!-- Key worker (crates/lowki-worker, built with `make pkg`): bindings-only JS + wasm. -->
     <link data-trunk rel="copy-file" href="../../crates/lowki-worker/js/worker.js" data-target-path="lowki-worker/js" />
     <link data-trunk rel="copy-dir" href="../../crates/lowki-worker/pkg/web" data-target-path="lowki-worker/pkg/web" />
+    <!-- Anon-RPC + Privacy Pools glue (packages/lowki-kohaku-host/browser-wallet, built with
+         `node browser-wallet/build.mjs`). Sets globalThis.lowkiGlue; Rust waits for it. -->
+    <link data-trunk rel="copy-dir" href="../../packages/lowki-kohaku-host/browser-wallet/dist" data-target-path="lowki-glue" />
+    <script type="module" src="lowki-glue/lowki-glue.js"></script>
   </head>
   <body></body>
 </html>

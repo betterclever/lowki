@@ -429,3 +429,14 @@ impl WalletError {
         }
     }
 }
+
+/// How the wallet reaches the chain (shown on Home): through Anon-RPC, or directly and why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChainConnection {
+    /// Reads and broadcasts go through the anon network.
+    pub private: bool,
+    /// "Private connection" or "Direct connection".
+    pub title: String,
+    /// Which network (Nox, Nym…) or the reason it's direct.
+    pub detail: String,
+}

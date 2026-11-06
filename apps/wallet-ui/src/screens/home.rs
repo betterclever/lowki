@@ -39,6 +39,8 @@ pub fn Home() -> impl IntoView {
             c.fail(e);
         }
     });
+    // How the chain is reached (Anon-RPC or direct, and why). Resolves after the anon boot.
+    let connection = LocalResource::new(move || async move { backend().chain_connection().await });
     let address = move || session.with(|s| s.as_ref().map(|s| s.address.clone()).unwrap_or_default());
     let app_name = c.app.get_untracked().name;
 
@@ -64,6 +66,14 @@ pub fn Home() -> impl IntoView {
                     }}
                 </div>
                 <p class="meta-line">{move || balances.get().and_then(Result::ok).map(|b| format!("{} in total on {}", usd(b.usd_cents), b.network))}</p>
+                {move || connection.get().flatten().map(|cn| view! {
+                    <p class=if cn.private { "conn private" } else { "conn direct" } data-test="rpc-status"
+                        data-private=cn.private.to_string()>
+                        <span class="conn-dot" aria-hidden="true"></span>
+                        <strong>{cn.title}</strong>
+                        <span class="conn-detail">{cn.detail}</span>
+                    </p>
+                })}
             </div>
             <div class="actions">
                 <Btn label="Send".to_string() icon=Ic::ArrowUpRight test="send" on_click=move || c.go(Screen::Send) />
@@ -126,8 +136,9 @@ fn Tokens(b: Balances) -> impl IntoView {
 #[component]
 fn Vault(b: Balances) -> impl IntoView {
     let c = ctx();
-    let p = b.private_of(Token::Usdc);
-    let has_public = b.public_of(Token::Usdc).units > 0;
+    let tok = backend().private_token();
+    let p = b.private_of(tok);
+    let has_public = b.public_of(tok).units > 0;
     let has_private = p.units > 0;
     view! {
         <section class="private-card" aria-labelledby="vault-h">
@@ -135,7 +146,7 @@ fn Vault(b: Balances) -> impl IntoView {
                 <h2 id="vault-h" class="label">"Private balance"</h2>
                 <PrivateBadge />
             </div>
-            <div class="balance md" data-test="private-balance"><span>{p.fmt_plain()}</span><small>"USDC"</small></div>
+            <div class="balance md" data-test="private-balance"><span>{p.fmt_plain()}</span><small>{tok.symbol()}</small></div>
             <p class="private-note">"Only you can see this. No app can, including this one."</p>
             <div class="private-actions">
                 <button class="btn on-private sm" type="button" data-test="move-in" disabled=!has_public
