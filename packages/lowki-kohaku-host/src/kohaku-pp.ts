@@ -14,3 +14,13 @@ export { OxBowAspService } from "@kohaku-eth/privacy-pools/src/data/0xbowAsp.ser
 export { DataService } from "@kohaku-eth/privacy-pools/src/data/data.service";
 export { EthClient } from "@kohaku-eth/privacy-pools/src/data/eth-client";
 export type { GetLogsParams } from "@kohaku-eth/privacy-pools/src/data/eth-client";
+export { PrivacyPoolsBroadcaster } from "@kohaku-eth/privacy-pools/src/plugin/broadcaster";
+export { encodeWithdrawalPayload, decodeRelayData, encodeRelayData } from "@kohaku-eth/privacy-pools/src/utils/encoding.utils";
+export { computeMerkleTreeRoot } from "@kohaku-eth/privacy-pools/src/utils/proof.util";
+export { lastUpdateRootEventSelector } from "@kohaku-eth/privacy-pools/src/state/selectors/slices.selectors";
+export { RelayerClient } from "@kohaku-eth/privacy-pools/src/relayer/relayer-client";
+export type { IAspService } from "@kohaku-eth/privacy-pools/src/data/asp.interface";
+export type {
+  IRelayerClient, IQuoteRequest, IQuoteResponse, IRelayRequest, ISuccessfullRelayResponse,
+} from "@kohaku-eth/privacy-pools/src/relayer/interfaces/relayer-client.interface";
+export type { PPv1RelayerPrivateOperation } from "@kohaku-eth/privacy-pools/src/plugin/interfaces/protocol-params.interface";
