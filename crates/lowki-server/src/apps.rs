@@ -74,7 +74,19 @@ pub async fn refresh_origin_cache(state: &AppState) -> ApiResult<()> {
     Ok(())
 }
 
+/// An app is exactly one web origin.
+///
+/// The wallet derives a separate account (address) for every origin it is embedded under, and
+/// the access token's `sub` is pairwise per app. With one origin per app the two line up: one
+/// app, one origin, one address, one `sub`. An app that serves several origins (prod, staging,
+/// a second domain) registers one app per origin, and gets a different wallet and `sub` on each,
+/// which is what the user's wallet does anyway.
 fn normalize_origins(list: &[String]) -> ApiResult<Vec<String>> {
+    if list.len() != 1 {
+        return Err(ApiError::bad_request(
+            "allowed_origins must contain exactly one origin: register one app per origin",
+        ));
+    }
     list.iter()
         .map(|o| {
             let u = url::Url::parse(o).map_err(|_| ApiError::bad_request(format!("invalid origin: {o}")))?;

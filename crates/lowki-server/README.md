@@ -38,6 +38,9 @@ curl -X POST $URL/admin/v1/apps -H "authorization: Bearer $LOWKI_ADMIN_TOKEN" \
 # -> { "id": "app_…", "app_secret": "lsk_…" (shown once), "webhook_secret": "whsec_…", … }
 ```
 
+**An app is exactly one origin.** `allowed_origins` must hold one entry. To serve staging and
+production, or two domains, register one app per origin. See "App vs origin" below.
+
 ## Environment variables
 
 All configuration comes from the environment. Secrets never appear in logs or `Debug` output.
@@ -90,7 +93,7 @@ Any non-GET request must carry an `Origin` that is one of `LOWKI_ORIGINS`; anyth
 | `POST /v1/session/refresh` | refresh cookie | Rotates both cookies (single use) |
 | `POST /v1/session/logout` | – | Deletes the session and clears the cookies |
 | `POST /v1/passkeys/register/start` | optional session (CSRF if present) | Creation options (`residentKey: required`, UV required, `extensions.prf: {}`) and a `flow_id`. With a session, the passkey is added to that user; without one, a user is created. |
-| `POST /v1/passkeys/register/finish` | same | `{flow_id, credential}` gives a session plus `credential_id` |
+| `POST /v1/passkeys/register/finish` | same | `{flow_id, credential}` gives a session plus `credential_id`. A credential created inside an app's iframe (`crossOrigin: true`) is accepted only when its `topOrigin` is a registered app origin; otherwise `403 top_origin_not_registered`. See "Passkeys created inside an app's iframe". |
 | `POST /v1/passkeys/login/start` | – | Discoverable assertion options, UV required |
 | `POST /v1/passkeys/login/finish` | – | `{flow_id, credential}` gives a session plus `credential_id` and `wrapped_blob` |
 | `PUT /v1/passkeys/{cred_id}/blob` | session with a fresh assertion by that passkey | `{blob: base64url}` stores the wrapped seed (at most 4 KiB) |
@@ -123,8 +126,8 @@ Any non-GET request must carry an `Origin` that is one of `LOWKI_ORIGINS`; anyth
 
 | Method and path | Purpose |
 |---|---|
-| `POST /admin/v1/apps` | `{name, allowed_origins[], webhook_url?}` gives the app plus `app_secret` and `webhook_secret`, both shown once |
-| `GET /admin/v1/apps`, `GET/PATCH /admin/v1/apps/{id}` | List, read or update an app (name, origins, webhook) |
+| `POST /admin/v1/apps` | `{name, allowed_origins: [<exactly one origin>], webhook_url?}` gives the app plus `app_secret` and `webhook_secret`, both shown once |
+| `GET /admin/v1/apps`, `GET/PATCH /admin/v1/apps/{id}` | List, read or update an app (name, its one origin, webhook) |
 | `GET /admin/v1/apps/{id}/users?limit&offset` | The app's users, by **pairwise ID only** |
 | `POST /admin/v1/keys/rotate` | Rotates the JWT signing key |
 | `GET /admin/v1/audit?limit&event` | Audit log: sign-ins, links, share and blob releases and denials, app changes, key rotations. Metadata only. |
@@ -151,7 +154,7 @@ Header: `{"alg":"ES256","typ":"JWT","kid":"…"}`
 |---|---|
 | `iss` | `LOWKI_PUBLIC_URL` without the trailing slash |
 | `aud` | the app ID (`app_…`) |
-| `sub` | pairwise user ID: `did:lowki:` + 32 hex characters, stable per (user, app) and unlinkable across apps |
+| `sub` | pairwise user ID: `did:lowki:` + 32 hex characters, stable per (user, app) and unlinkable across apps. An app is one origin, so this is also per (user, origin), matching the wallet address |
 | `sid` | per-app session identifier (also pairwise) |
 | `iat`, `exp` | issued-at and expiry; the default lifetime is 15 minutes |
 | `jti` | random token ID |
@@ -182,6 +185,72 @@ export async function verifyLowkiToken(token) {
 ```
 
 This mirrors how a Privy backend verifies Privy tokens: swap Privy's verification key and issuer for Lowki's JWKS and issuer, and `did:privy:…` becomes `did:lowki:…`. `tests/node/verify-jose.mjs` is the same check, and the test suite runs it against a real token.
+
+### App vs origin
+
+The wallet derives one account per **origin** (`appAccount(origin)`, in lowki-worker), while the
+token's `sub` is pairwise per **app ID**. If an app had two origins, one `sub` would map to two
+different wallet addresses, and an app backend keyed on `sub` would see one user with two
+unrelated wallets.
+
+Two fixes were possible: a pairwise `sub` per (app, origin), or exactly one origin per app.
+Lowki takes **one origin per app**:
+
+- the identity the user sees (one address per site) and the one the app sees (one `sub` per app)
+  are then the same thing, with no new derivation and no change to existing `sub` values;
+- a `sub` per (app, origin) would only hide the mismatch inside one app ID: the app would get
+  two `sub`s for one person anyway, and couldn't tell them apart from two people;
+- it is enforced in one place: `POST`/`PATCH /admin/v1/apps` refuse anything but one origin
+  (400), and an app row from before the rule that still lists several origins gets
+  `409 app_has_multiple_origins` from the token endpoint until it is split.
+
+An operator who wants one product on several domains registers one app per domain; the user
+then has a separate wallet and `sub` on each, as the wallet would give them anyway.
+
+## Passkeys created inside an app's iframe
+
+The wallet runs in an iframe on the app's page. Chrome then builds the registration's
+`clientDataJSON` with `crossOrigin: true` and `topOrigin: <the app page's origin>`. webauthn-rs
+0.5 refuses every such registration (`CredentialCrossOrigin`; the flag can't be configured) and
+never reads `topOrigin`. Assertions are not affected: webauthn-rs accepts cross-origin
+assertions.
+
+**What the server accepts.** A cross-origin registration passes only if `topOrigin` is exactly
+a registered app origin (and not a Lowki origin). An unknown or missing `topOrigin` is refused
+(`403 top_origin_not_registered`, or 400 when missing), and the ceremony is burned.
+
+**How (`src/passkey.rs`, `admit_cross_origin_registration`).** Before webauthn-rs sees the
+credential, the server parses `clientDataJSON` and checks, itself:
+
+1. `type == "webauthn.create"`;
+2. `challenge` equals the challenge stored with the ceremony (constant-time);
+3. `origin` is a Lowki origin (any port in dev mode, as webauthn-rs allows);
+4. `topOrigin` is a registered app origin;
+5. the attestation format (`fmt`, read from the CBOR attestation object) is `none`.
+
+Only then does it set `crossOrigin` to `false`, drop `topOrigin`, and hand the result to
+webauthn-rs, which runs its whole check unchanged: type, challenge, origin, RP ID hash,
+user presence and verification, algorithm, excluded credentials. Same-origin registrations are
+not touched.
+
+**Why this is sound.** Lowki requests `attestation: "none"`. With the `none` format, nothing
+signs `clientDataJSON`: webauthn-rs hashes it only to verify an attestation signature, and
+`none` has none. So the rewritten bytes carry exactly what the browser's did, minus the two
+fields the server has already checked; no signature is invalidated and no check is skipped. A
+signed format (`packed`, `tpm`, …) covers the client data hash, so it can't be rewritten and is
+refused when cross-origin. Note also what the check is and isn't: like `origin`, `topOrigin` is
+set by the browser, so it stops a page that isn't a registered app from creating Lowki passkeys
+in an honest browser. It is not a cryptographic proof (a non-browser client can write any
+client data under `none` attestation), which is equally true of same-origin registration.
+
+**Why not patch webauthn-rs.** The alternative was to vendor webauthn-rs-core and turn on its
+internal `allow_cross_origin`. That flag would still not check `topOrigin` (the server would
+need this same check anyway), and a vendored fork of the WebAuthn library is a larger audit and
+upgrade burden than ~100 lines that only narrow what reaches an unmodified library.
+
+The wallet used to clear `crossOrigin` itself before posting (a client-side stopgap in
+`apps/wallet-ui/src/backend/real/passkey.rs`). That is gone: the browser's client data is posted
+as is.
 
 ## Security notes
 
@@ -220,6 +289,19 @@ The integration tests (`tests/api.rs`) run the server in-process against a **moc
 - CSRF, origin and CORS rules;
 - linking and unlinking methods;
 - the admin and app APIs.
+
+`tests/passkey_cross_origin.rs` uses a small software authenticator (P-256, `none` attestation,
+signed assertions) to cover registration from an app's iframe: accepted under a registered app
+origin and then usable for a cross-origin login; refused under an unregistered top origin
+(other host, port, scheme, subdomain, a non-origin string) and with no `topOrigin`; every other
+check kept (type, challenge, origin, signed attestation formats, RP ID hash, single-use
+ceremonies); same-origin registration unchanged; and the one-origin-per-app rule.
+
+`tests/e2e/run.sh` also runs the iframe case in real Chrome: it registers an app for
+`http://localhost:$((PORT+1))`, serves a page there and on `PORT+2` that embeds the server origin
+in an `<iframe allow="publickey-credentials-create; publickey-credentials-get">`, and checks that
+the browser marks the ceremony cross-origin, that registration succeeds under the app (and the
+passkey then signs in from the iframe), and that it is refused under the unregistered page.
 
 ## ENS stealth gateway (ENSIP-30, CCIP-Read)
 

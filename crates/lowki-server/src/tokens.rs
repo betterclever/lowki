@@ -27,7 +27,8 @@ use crate::{
 /// `sub` for a user in an app: `did:lowki:` + hex(HMAC(user_key, "lowki/pairwise-sub/v1" || app_id)[..16])
 /// where `user_key = HMAC(pairwise_root, "lowki/pairwise-user/v1" || user_salt)` and
 /// `pairwise_root` is derived from `LOWKI_SERVER_SECRET`. Stable per (user, app); unlinkable
-/// across apps without the server secret.
+/// across apps without the server secret. An app is exactly one origin, so this is also the
+/// `sub` of exactly one wallet account (the wallet derives one address per origin).
 pub fn pairwise_id(state: &AppState, user_salt_hex: &str, app_id: &str) -> String {
     let salt = hex::decode(user_salt_hex).unwrap_or_default();
     let user_key = hmac(&state.keys.pairwise, &[b"lowki/pairwise-user/v1", &salt]);
@@ -203,6 +204,15 @@ pub async fn issue_token(
     let app = apps::get_app(&state, &app_id)
         .await?
         .ok_or_else(|| ApiError::not_found("unknown app"))?;
+    // One origin per app (see `apps::normalize_origins`). Rows created before that rule with
+    // several origins get no tokens until they are split, so a `sub` never spans two wallets.
+    let [app_origin] = app.allowed_origins.as_slice() else {
+        return Err(ApiError::new(
+            axum::http::StatusCode::CONFLICT,
+            "app_has_multiple_origins",
+            "this app has more than one origin; register one app per origin",
+        ));
+    };
     let s = session.ok_or_else(|| ApiError::unauthorized("no session"))?;
     let req_origin = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()).unwrap_or("");
     let body = body.map(|Json(b)| b).unwrap_or_default();
@@ -212,10 +222,10 @@ pub async fn issue_token(
             .origin
             .as_deref()
             .ok_or_else(|| ApiError::bad_request("origin is required"))?;
-        if !app.allowed_origins.iter().any(|o| o == parent) {
+        if parent != app_origin {
             return Err(ApiError::forbidden("origin is not registered for this app"));
         }
-    } else if !app.allowed_origins.iter().any(|o| o == req_origin) {
+    } else if req_origin != app_origin {
         return Err(ApiError::forbidden("origin is not registered for this app"));
     }
     state
