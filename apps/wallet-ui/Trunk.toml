@@ -1,0 +1,9 @@
+[build]
+target = "index.html"
+dist = "dist"
+# Relative URLs so the build can be served from any path (iframe, popup, file host).
+public_url = "./"
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 8080

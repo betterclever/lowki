@@ -1,0 +1,32 @@
+[package]
+name = "lowki-wallet-ui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Lowki embedded wallet UI (Leptos CSR). Runs inside the Lowki iframe/popup."
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Standalone crate: not part of the repo workspace.
+[workspace]
+
+[dependencies]
+leptos = { version = "0.8.23", features = ["csr"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+gloo-timers = { version = "0.3", features = ["futures"] }
+console_error_panic_hook = "0.1"
+web-sys = { version = "0.3", features = [
+  "Window", "Document", "Element", "HtmlElement", "HtmlInputElement", "Navigator",
+  "Location", "UrlSearchParams", "MessageEvent", "KeyboardEvent", "Clipboard",
+  "MediaQueryList", "CssStyleDeclaration", "Storage",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
