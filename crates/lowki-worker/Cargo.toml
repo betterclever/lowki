@@ -1,0 +1,80 @@
+[package]
+name = "lowki-worker"
+version = "0.1.0"
+edition = "2024"
+description = "Lowki key worker: the single wasm module (Web Worker in the Lowki iframe) where keys exist"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["webgpu"]
+# WebGPU MSMs for Groth16 proving (falls back to the CPU at runtime when unavailable).
+webgpu = ["lowki-groth16/webgpu"]
+
+[dependencies]
+lowki-keys = { path = "../lowki-keys" }
+lowki-stealth = { path = "../lowki-stealth" }
+lowki-pp-core = { path = "../lowki-pp-core" }
+lowki-groth16 = { path = "../lowki-groth16" }
+lowki-aa = { path = "../lowki-aa" }
+lowki-shares = { path = "../lowki-shares" }
+
+aes-gcm = { version = "0.10.3", default-features = false, features = ["aes", "alloc", "zeroize"] }
+alloy-dyn-abi = { version = "1", default-features = false, features = ["std", "eip712"] }
+alloy-primitives = { version = "1", default-features = false, features = ["std", "rlp"] }
+alloy-rlp = { version = "0.3", default-features = false, features = ["std"] }
+ark-ff = { version = "0.5", default-features = false }
+hex = "0.4.3"
+hkdf = "0.12.4"
+hmac = "0.12.1"
+hpke = { version = "0.13", default-features = false, features = ["alloc", "x25519"] }
+k256 = { version = "0.13.4", default-features = false, features = ["ecdsa", "arithmetic"] }
+rand_core = { version = "0.6.4", features = ["getrandom"] }
+rand_core_09 = { package = "rand_core", version = "0.9", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+serde_json = "1"
+sha2 = "0.10.9"
+sha3 = "0.10.8"
+zeroize = { version = "1.8", features = ["derive"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+wasm-bindgen = "=0.2.130"
+wasm-bindgen-futures = "0.4.80"
+js-sys = "0.3.107"
+serde-wasm-bindgen = "0.6"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = "0.4"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "=0.3.80"
+
+# Copied from lowki-groth16 (its README says every dependent must): wasmi's tail-call dispatch
+# overflows the stack in unoptimized native builds, and the field arithmetic is slow unoptimized.
+[profile.dev]
+opt-level = 1
+[profile.test]
+opt-level = 3
+[profile.dev.package.wasmi]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+debug = false
+[profile.dev.package.ark-ff]
+opt-level = 3
+[profile.dev.package.ark-ec]
+opt-level = 3
+[profile.dev.package.ark-bn254]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
