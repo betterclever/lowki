@@ -1,0 +1,12 @@
+{
+  "goog:chromeOptions": {
+    "args": [
+      "--headless=new",
+      "--enable-unsafe-webgpu",
+      "--enable-features=WebGPU",
+      "--ignore-gpu-blocklist",
+      "--no-first-run",
+      "--no-default-browser-check"
+    ]
+  }
+}
