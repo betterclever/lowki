@@ -1,0 +1,108 @@
+// Lowki Tips fork setup: registers the demo creators' stealth names under the parent name and
+// writes config/fork.json (the app's one config for the fork target).
+//
+// Called by scripts/demo-tips.sh after the ENS contracts are deployed and lowki-server runs.
+// Same flow as contracts/e2e/e2e.ts steps 2-3, with the same Rust CLI (lowki-ens + lowki-stealth)
+// for keys, calldata and signatures; viem only sends the operator's transactions.
+//
+// Creator keys: seed = sha512("<TIPS_CREATOR_PHRASE>/<label>") (64 bytes), then the wallet's own
+// derivation: owner m/137'/0'/0', spending m/5564'/0'/0', viewing m/5564'/0'/1'. Demo only.
+//
+// Env (all required): TIPS_RPC (fork RPC as seen from here), TIPS_PUBLIC_RPC (as seen by the
+// browser), TIPS_CLI, TIPS_ENS_CONFIG, TIPS_LOWKI_DEPLOYMENT, TIPS_OPERATOR_KEY,
+// TIPS_CREATOR_PHRASE, TIPS_APP_ID, TIPS_WALLET_URL, TIPS_GATEWAY_BASE, TIPS_OUT.
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createPublicClient, createWalletClient, http, keccak256, parseAbi, toHex, zeroAddress } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { sepolia } from 'viem/chains';
+
+const env = (k) => {
+  const v = process.env[k];
+  if (!v) throw new Error(`missing env ${k}`);
+  return v;
+};
+const RPC = env('TIPS_RPC');
+const CLI = env('TIPS_CLI');
+const ensCfg = JSON.parse(readFileSync(env('TIPS_ENS_CONFIG'), 'utf8'));
+const ens = ensCfg.ens;
+const lowki = JSON.parse(readFileSync(env('TIPS_LOWKI_DEPLOYMENT'), 'utf8'));
+const operator = privateKeyToAccount(env('TIPS_OPERATOR_KEY'));
+const PHRASE = env('TIPS_CREATOR_PHRASE');
+const OUT = env('TIPS_OUT');
+const template = JSON.parse(readFileSync(new URL('../config/sepolia.json', import.meta.url), 'utf8'));
+const creators = template.creators;
+
+const cli = (cmd, input) => JSON.parse(execFileSync(CLI, [cmd], { input: JSON.stringify(input), encoding: 'utf8' }));
+const chain = { ...sepolia, id: Number(ensCfg.chainId) };
+const pub = createPublicClient({ chain, transport: http(RPC) });
+const wallet = createWalletClient({ account: operator, chain, transport: http(RPC) });
+const registryAbi = parseAbi([
+  'function getResolver(string label) view returns (address)',
+  'function getState(uint256 anyId) view returns ((uint8 status, uint64 expiry, address latestOwner, uint256 tokenId, uint256 resource))',
+]);
+const registrarAbi = parseAbi(['function nonces(address) view returns (uint256)']);
+
+async function send(to, data, extra = {}) {
+  const estimate = await pub.estimateGas({ account: operator, to, data, ...extra });
+  const hash = await wallet.sendTransaction({ to, data, gas: (estimate * 13n) / 10n, ...extra });
+  const r = await pub.waitForTransactionReceipt({ hash });
+  if (r.status !== 'success') throw new Error(`tx reverted: ${hash}`);
+  return r;
+}
+
+const chainId = await pub.getChainId();
+const now = Number((await pub.getBlock()).timestamp);
+for (const c of creators) {
+  const name = `${c.label}.${lowki.parentName}`;
+  const seed = `0x${createHash('sha512').update(`${PHRASE}/${c.label}`).digest('hex')}`;
+  const keys = cli('keys', { seed });
+  const resolver = await pub.readContract({ address: lowki.LowkiRegistry, abi: registryAbi, functionName: 'getResolver', args: [c.label] });
+  if (resolver.toLowerCase() === lowki.StealthResolver.toLowerCase()) {
+    console.log(`   ${name}: already set up (owner ${keys.owner})`);
+    continue;
+  }
+  const state = await pub.readContract({ address: lowki.LowkiRegistry, abi: registryAbi, functionName: 'getState', args: [BigInt(keccak256(toHex(c.label)))] });
+  if (state.status !== 2) {
+    const nonce = await pub.readContract({ address: lowki.LowkiRegistrar, abi: registrarAbi, functionName: 'nonces', args: [keys.owner] });
+    const reg = cli('sign-registration', {
+      seed, chain_id: chainId, registrar: lowki.LowkiRegistrar, label: c.label,
+      resolver: zeroAddress, duration: 365 * 86400, nonce: Number(nonce), deadline: now + 3600,
+    });
+    await send(lowki.LowkiRegistrar, reg.calldata);
+  }
+  const setup = cli('owner-setup', {
+    rpc: RPC, seed, chain_id: chainId, name,
+    owner_account: lowki.LowkiOwnerAccount,
+    auth_nonce: await pub.getTransactionCount({ address: keys.owner }),
+    exec_nonce: 0, deadline: now + 3600,
+    factory: ens.VerifiableFactory, permissioned_resolver_impl: ens.PermissionedResolverImpl,
+    stealth_resolver: lowki.StealthResolver, registry: lowki.LowkiRegistry,
+    gateway_url: lowki.gatewayUrl,
+  });
+  await send(keys.owner, setup.calldata, {
+    authorizationList: [{ ...setup.authorization, chainId: Number(setup.authorization.chainId), nonce: Number(setup.authorization.nonce) }],
+  });
+  console.log(`   ${name}: registered, owner ${keys.owner}, meta ${keys.meta_uri.slice(0, 20)}…`);
+}
+
+const gatewayBase = env('TIPS_GATEWAY_BASE');
+const config = {
+  _comment: 'Generated by scripts/demo-tips.sh for the local fork. Do not edit; re-run the script.',
+  target: 'fork',
+  chain: { id: chainId, name: 'Sepolia (local fork)', rpcUrl: env('TIPS_PUBLIC_RPC'), explorerTxUrl: null },
+  ens: {
+    universalResolver: ens.UniversalResolver,
+    stealthResolver: lowki.StealthResolver,
+    parentName: lowki.parentName,
+    gatewayUrl: lowki.gatewayUrl,
+    recordsUrl: `${gatewayBase}/v1/ens/records`,
+  },
+  lowki: { appId: env('TIPS_APP_ID'), walletUrl: env('TIPS_WALLET_URL') },
+  tip: template.tip,
+  creators,
+  demo: { faucet: true, creatorSeedPhrase: PHRASE },
+};
+writeFileSync(OUT, JSON.stringify(config, null, 2) + '\n');
+console.log(`   wrote ${OUT}`);
