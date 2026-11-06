@@ -6,8 +6,9 @@ use core::fmt::Write;
 
 use ark_bn254::Fq2;
 use ark_ec::short_weierstrass::SWCurveConfig;
+use ark_ff::Field;
 
-use crate::field::{FieldConsts, LIMBS, LIMB_BITS, fq2_const_words, fq_consts};
+use crate::field::{FieldConsts, LIMBS, LIMB_BITS, fq2_const_words, fq_consts, fr_consts};
 
 /// Which curve a shader module is generated for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -355,6 +356,144 @@ pub fn msm_module(kind: CurveKind) -> String {
     s.push_str(&accessors(kind));
     s
 }
+
+/// snarkjs' QAP witness map on the GPU, over Fr (`fq_*` here is Fr arithmetic, same 20 × 13-bit
+/// Montgomery form with R = 2^260). Buffers: `raw` = a ‖ b as arkworks words (8 × u32, Montgomery
+/// R = 2^256), `x` = three length-n vectors (a, b, c) of GPU elements, `tw` = ω^k then ω^-k for
+/// k < n/2, `coset` = g^k / n, `outp` = h as canonical 8 × u32 words. One dispatch per step:
+/// `qap_load`, then per transform `qap_bitrev` + log n × `qap_stage`, `qap_coset` in between, and
+/// `qap_finish`. Every kernel is straight-line (at most one field product chain per thread).
+pub fn qap_module() -> String {
+    let c = fr_consts();
+    let mut s = fq_wgsl(&c);
+    let w = &mut s;
+    // 2^264 mod r as a plain integer: fq_mul(raw, K) = raw · 2^4 turns arkworks' Montgomery
+    // words (v · 2^256) into ours (v · 2^260).
+    let k: ark_bn254::Fr = ark_bn254::Fr::from(2u64).pow([264u64]);
+    let k = crate::field::to_limbs(&ark_ff::PrimeField::into_bigint(k));
+    writeln!(w, "const K264: BigInt = {};", arr(&k)).unwrap();
+    let mut one = [0u32; LIMBS];
+    one[0] = 1;
+    writeln!(w, "const INT_ONE: BigInt = {};", arr(&one)).unwrap();
+    w.push_str(QAP_KERNELS);
+    for (name, buf) in [("ld_x", "x"), ("ld_tw", "tw"), ("ld_coset", "coset")] {
+        writeln!(w, "fn {name}(o: u32) -> BigInt {{\n  var r: BigInt;").unwrap();
+        for j in 0..LIMBS {
+            writeln!(w, "  r.l[{j}] = {buf}[o + {j}u];").unwrap();
+        }
+        writeln!(w, "  return r;\n}}").unwrap();
+    }
+    writeln!(w, "fn st_x(o: u32, v: BigInt) {{").unwrap();
+    for j in 0..LIMBS {
+        writeln!(w, "  x[o + {j}u] = v.l[{j}];").unwrap();
+    }
+    writeln!(w, "}}").unwrap();
+    // 8 × 32-bit words <-> 20 × 13-bit limbs
+    writeln!(w, "fn ld_raw(o: u32) -> BigInt {{\n  var r: BigInt;").unwrap();
+    for i in 0..LIMBS as u32 {
+        let (wd, sh) = (i * LIMB_BITS / 32, i * LIMB_BITS % 32);
+        if wd >= 8 {
+            break;
+        }
+        write!(w, "  r.l[{i}] = ((raw[o + {wd}u] >> {sh}u)").unwrap();
+        if sh + LIMB_BITS > 32 && wd + 1 < 8 {
+            write!(w, " | (raw[o + {}u] << {}u)", wd + 1, 32 - sh).unwrap();
+        }
+        writeln!(w, ") & MASK;").unwrap();
+    }
+    writeln!(w, "  return r;\n}}").unwrap();
+    writeln!(w, "fn st_out(o: u32, v: BigInt) {{\n  var r = array<u32, 8>();").unwrap();
+    for i in 0..LIMBS as u32 {
+        let (wd, sh) = (i * LIMB_BITS / 32, i * LIMB_BITS % 32);
+        if wd < 8 {
+            writeln!(w, "  r[{wd}] = r[{wd}] | (v.l[{i}] << {sh}u);").unwrap();
+        }
+        if sh + LIMB_BITS > 32 && wd + 1 < 8 {
+            writeln!(w, "  r[{}] = r[{}] | (v.l[{i}] >> {}u);", wd + 1, wd + 1, 32 - sh).unwrap();
+        }
+    }
+    for j in 0..8 {
+        writeln!(w, "  outp[o + {j}u] = r[{j}];").unwrap();
+    }
+    writeln!(w, "}}").unwrap();
+    s.replace("{{WG}}", &WORKGROUP_SIZE.to_string())
+}
+
+const QAP_KERNELS: &str = r#"
+struct QapParams { count: u32, n: u32, log_n: u32, half: u32, tw_stride: u32, tw_off: u32, p6: u32, p7: u32 }
+@group(0) @binding(0) var<storage, read> raw: array<u32>;
+@group(0) @binding(1) var<storage, read_write> x: array<u32>;
+@group(0) @binding(2) var<storage, read> tw: array<u32>;
+@group(0) @binding(3) var<storage, read> coset: array<u32>;
+@group(0) @binding(4) var<storage, read_write> outp: array<u32>;
+@group(0) @binding(5) var<uniform> params: QapParams;
+
+fn qidx(gid: vec3<u32>, nwg: vec3<u32>) -> u32 { return gid.x + gid.y * nwg.x * {{WG}}u; }
+
+// a, b from arkworks words; c = a·b (equal to snarkjs' c: b is zero on the input rows).
+@compute @workgroup_size({{WG}})
+fn qap_load(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+  let i = qidx(gid, nwg);
+  if (i >= params.count) { return; }
+  let a = fq_mul(ld_raw(i * 8u), K264);
+  let b = fq_mul(ld_raw((params.n + i) * 8u), K264);
+  st_x(i * 20u, a);
+  st_x((params.n + i) * 20u, b);
+  st_x((2u * params.n + i) * 20u, fq_mul(a, b));
+}
+
+// Bit-reversal permutation of each of the three vectors (thread t: vector t / n, index t % n).
+@compute @workgroup_size({{WG}})
+fn qap_bitrev(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+  let t = qidx(gid, nwg);
+  if (t >= params.count) { return; }
+  let v = t / params.n;
+  let i = t % params.n;
+  let j = reverseBits(i) >> (32u - params.log_n);
+  if (i < j) {
+    let oi = (v * params.n + i) * 20u;
+    let oj = (v * params.n + j) * 20u;
+    let xi = ld_x(oi);
+    st_x(oi, ld_x(oj));
+    st_x(oj, xi);
+  }
+}
+
+// One radix-2 decimation-in-time stage (butterflies of span `half`) on all three vectors.
+@compute @workgroup_size({{WG}})
+fn qap_stage(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+  let t = qidx(gid, nwg);
+  if (t >= params.count) { return; }
+  let hn = params.n / 2u;
+  let v = t / hn;
+  let k = t % hn;
+  let idx = k % params.half;
+  let i0 = v * params.n + (k / params.half) * 2u * params.half + idx;
+  let i1 = i0 + params.half;
+  let w = ld_tw((params.tw_off + idx * params.tw_stride) * 20u);
+  let u = ld_x(i0 * 20u);
+  let p = fq_mul(w, ld_x(i1 * 20u));
+  st_x(i0 * 20u, fq_add(u, p));
+  st_x(i1 * 20u, fq_sub(u, p));
+}
+
+// x[v][k] *= g^k / n.
+@compute @workgroup_size({{WG}})
+fn qap_coset(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+  let t = qidx(gid, nwg);
+  if (t >= params.count) { return; }
+  st_x(t * 20u, fq_mul(ld_x(t * 20u), ld_coset((t % params.n) * 20u)));
+}
+
+// h = a·b − c, out of Montgomery form (· 1 · 2^-260), as canonical 8 × u32 words.
+@compute @workgroup_size({{WG}})
+fn qap_finish(@builtin(global_invocation_id) gid: vec3<u32>, @builtin(num_workgroups) nwg: vec3<u32>) {
+  let i = qidx(gid, nwg);
+  if (i >= params.count) { return; }
+  let h = fq_sub(fq_mul(ld_x(i * 20u), ld_x((params.n + i) * 20u)), ld_x((2u * params.n + i) * 20u));
+  st_out(i * 8u, fq_mul(h, INT_ONE));
+}
+"#;
 
 /// Field self-test kernel (tests only): `out[i] = op(a[i], b[i])` on Fq for op in
 /// {mul, add, sub}, laid out as 3 consecutive results.

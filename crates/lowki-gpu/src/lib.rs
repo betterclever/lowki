@@ -25,6 +25,7 @@
 
 pub mod field;
 pub mod plan;
+pub mod qap;
 pub mod shader;
 
 use core::fmt;
@@ -39,6 +40,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use field::{Conv, GpuField};
 use plan::Plan;
+pub use qap::{QapPending, QapTables};
 pub use shader::CurveKind;
 pub use wgpu::AdapterInfo;
 
@@ -112,6 +114,7 @@ pub struct Gpu {
     limits: wgpu::Limits,
     g1: Pipes,
     g2: Pipes,
+    qap: qap::QapPipes,
     lost: Arc<AtomicBool>,
     conv: Conv,
     debug_full_scratch: AtomicBool,
@@ -199,6 +202,7 @@ impl Gpu {
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let g1 = Self::pipes(&device, CurveKind::G1);
         let g2 = Self::pipes(&device, CurveKind::G2);
+        let qap = qap::QapPipes::new(&device);
         if let Some(e) = scope.pop().await {
             return Err(GpuError::Unavailable(format!("pipeline creation failed: {e}")));
         }
@@ -209,6 +213,7 @@ impl Gpu {
             limits,
             g1,
             g2,
+            qap,
             lost,
             conv: Conv::new(),
             debug_full_scratch: AtomicBool::new(false),
@@ -839,6 +844,11 @@ impl Pending {
     /// destroy every per-proof buffer.
     pub async fn wait(mut self) -> Result<Vec<MsmOutput>, GpuError> {
         let res = self.read().await;
+        self.settle(res).await
+    }
+
+    /// Wipe the buffers, wait for that, release them, and report GPU errors (else `res`).
+    async fn settle<T>(mut self, res: Result<T, GpuError>) -> Result<T, GpuError> {
         self.cleanup();
         // wait for the zeroing to complete before releasing memory
         let (tx, rx) = futures_channel::oneshot::channel();

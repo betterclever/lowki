@@ -558,6 +558,7 @@ dependencies = [
  "ark-bn254",
  "ark-ec",
  "ark-ff",
+ "ark-poly",
  "ark-std",
  "futures-channel",
  "js-sys",

@@ -6,7 +6,7 @@
 //! (the same trick as the ZPrize 2023 WebGPU MSM entries). Elements are in Montgomery form with
 //! `R = 2^260` (arkworks uses `2^256`), always fully reduced (`< p`).
 
-use ark_bn254::{Fq, Fq2};
+use ark_bn254::{Fq, Fq2, Fr};
 use ark_ff::{BigInteger256, Field, PrimeField, Zero};
 
 /// Limbs per base-field element.
@@ -65,8 +65,8 @@ pub(crate) struct FieldConsts {
     pub one: [u32; LIMBS],
 }
 
-pub(crate) fn fq_consts() -> FieldConsts {
-    let p = Fq::MODULUS;
+fn consts<F: PrimeField<BigInt = BigInteger256>>() -> FieldConsts {
+    let p = F::MODULUS;
     // -p^{-1} mod 2^13 via Newton iteration on the low limb.
     let p0 = p.0[0];
     let mut inv: u64 = 1;
@@ -77,8 +77,23 @@ pub(crate) fn fq_consts() -> FieldConsts {
     FieldConsts {
         p: to_limbs(&p),
         n0,
-        one: to_limbs(&r260().0.into_bigint()),
+        one: to_limbs(&F::from(2u64).pow([260u64]).into_bigint()),
     }
+}
+
+pub(crate) fn fq_consts() -> FieldConsts {
+    consts::<Fq>()
+}
+
+/// The same 20 × 13-bit Montgomery representation (R = 2^260) for the scalar field Fr,
+/// used by the QAP / NTT kernels ([`crate::qap`]).
+pub(crate) fn fr_consts() -> FieldConsts {
+    consts::<Fr>()
+}
+
+/// GPU encoding of an Fr element (`x · 2^260 mod r`, 13-bit limbs).
+pub(crate) fn fr_words(x: &Fr, r260: &Fr) -> [u32; LIMBS] {
+    to_limbs(&(*x * r260).into_bigint())
 }
 
 /// A base field the GPU kernels understand (Fq for G1, Fq2 for G2).
