@@ -121,25 +121,32 @@ md.push(g16Table([
 ]));
 md.push("\n#### Groth16, native / Node\n");
 md.push(g16Table([R("node-g16-mt.json"), R("node-g16-st.json"), R("native-1t.json"), R("native-par.json")]));
-// Before/after the host-WebAssembly witness change (results/before-*.json = the first run).
-if (existsSync(join(HERE, "results/before-browser-g16-wasm-gpu.json"))) {
-  const pair = (f) => [byId(R(`before-${f}`)), byId(R(f))];
-  const rows = [
-    ["browser-g16-wasm-cpu.json", "wasm_cpu", "lowki wasm, CPU (1 thread)"],
-    ["browser-g16-wasm-gpu.json", "wasm_webgpu", "lowki wasm, WebGPU"],
-    ["browser-g16-wasm-gpu-noiso.json", "wasm_webgpu", "lowki wasm, WebGPU, no COOP/COEP"],
-    ["browser-g16-snarkjs-mt.json", "snarkjs_mt", "snarkjs, default workers (reference, unchanged code)"],
-    ["browser-g16-snarkjs-mt-noiso.json", "snarkjs_mt", "snarkjs, default workers, no COOP/COEP"],
-  ];
-  md.push("\n### Groth16 in Chrome: before / after running the witness on the host WebAssembly engine\n");
+// Round 1 (witness on the host WebAssembly engine) and round 2 (GPU QAP, CPU G2 for small
+// circuits, artifact pinning), each against the previous state. results/before-*.json = the
+// first run; results/round1.json = round 1 as published (see its note); current files = now.
+const R1 = existsSync(join(HERE, "results/round1.json")) ? JSON.parse(readFileSync(join(HERE, "results/round1.json"), "utf8")) : null;
+const r1 = (f) => Object.fromEntries(Object.entries(R1?.[f] ?? {}).map(([id, v]) => [id, { id, median_ms: v[0], p90_ms: v[1], extra: v[2] != null ? { witness: { median_ms: v[2] } } : {} }]));
+const ROWS = [
+  ["browser-g16-wasm-cpu.json", "wasm_cpu", "lowki wasm, CPU (1 thread)"],
+  ["browser-g16-wasm-gpu.json", "wasm_webgpu", "lowki wasm, WebGPU"],
+  ["browser-g16-wasm-gpu-noiso.json", "wasm_webgpu", "lowki wasm, WebGPU, no COOP/COEP"],
+  ["browser-g16-snarkjs-mt.json", "snarkjs_mt", "snarkjs, default workers (reference, unchanged code)"],
+  ["browser-g16-snarkjs-mt-noiso.json", "snarkjs_mt", "snarkjs, default workers, no COOP/COEP"],
+];
+function beforeAfter(title, before, after) {
+  md.push(`\n### ${title}\n`);
   md.push("| Config | commitment before | commitment after | withdraw before | withdraw after | withdraw witness before → after |", "|---|---|---|---|---|---|");
-  for (const [f, k, label] of rows) {
-    const [b, a] = pair(f);
+  for (const [f, k, label] of ROWS) {
+    const [b, a] = [before(f), after(f)];
     const g = (o, c) => o[`g16.${c}.${k}`];
     const wit = (o) => o?.extra?.witness?.median_ms;
-    const w = wit(g(b, "withdraw")) != null ? `${fmt(wit(g(b, "withdraw")))} → ${fmt(wit(g(a, "withdraw")))}` : "–";
+    const w = wit(g(b, "withdraw")) != null && wit(g(a, "withdraw")) != null ? `${fmt(wit(g(b, "withdraw")))} → ${fmt(wit(g(a, "withdraw")))}` : "–";
     md.push(`| ${label} | ${cell(g(b, "commitment"))} | ${cell(g(a, "commitment"))} | ${cell(g(b, "withdraw"))} | ${cell(g(a, "withdraw"))} | ${w} |`);
   }
+}
+if (R1 && existsSync(join(HERE, "results/before-browser-g16-wasm-gpu.json"))) {
+  beforeAfter("Groth16 in Chrome, round 1: witness on the host WebAssembly engine (before → after)", (f) => byId(R(`before-${f}`)), r1);
+  beforeAfter("Groth16 in Chrome, round 2: GPU QAP/NTT + CPU G2 for small circuits (round 1 → round 2)", r1, (f) => byId(R(f)));
 }
 const size = existsSync(join(HERE, "results/size.md")) ? readFileSync(join(HERE, "results/size.md"), "utf8") : "";
 md.push("\n### Payload size\n", size);

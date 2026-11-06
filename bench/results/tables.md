@@ -61,19 +61,19 @@
 
 | Config | Full proof median / p90 | Witness median | Proof minus witness | One-time setup | Verifies (snarkjs) | Public signals = fixture |
 |---|---|---|---|---|---|---|
-| snarkjs fullProve, default (web workers / worker_threads) | 39.9 ms / 42.1 ms | 2.88 ms | 37.0 ms | none (snarkjs re-reads the zkey on every proof) | ✓ | ✓ |
-| snarkjs fullProve, singleThread | 286 ms / 296 ms | 2.64 ms | 283 ms | none (snarkjs re-reads the zkey on every proof) | ✓ | ✓ |
-| lowki-groth16 wasm, CPU (1 thread) | 126 ms / 127 ms | 1.27 ms | 125 ms | zkey load 8.94 ms | ✓ | ✓ |
-| lowki-groth16 wasm, WebGPU | 62.9 ms / 70.9 ms | – | – | GPU open 36.0 ms, zkey load 9.00 ms, base upload 2.00 ms | ✓ | ✓ |
+| snarkjs fullProve, default (web workers / worker_threads) | 39.0 ms / 41.5 ms | 2.90 ms | 36.1 ms | none (snarkjs re-reads the zkey on every proof) | ✓ | ✓ |
+| snarkjs fullProve, singleThread | 286 ms / 291 ms | 2.98 ms | 283 ms | none (snarkjs re-reads the zkey on every proof) | ✓ | ✓ |
+| lowki-groth16 wasm, CPU (1 thread) | 127 ms / 134 ms | 2.01 ms | 125 ms | zkey load 47.5 ms | ✓ | ✓ |
+| lowki-groth16 wasm, WebGPU | 47.6 ms / 48.5 ms | – | – | GPU open 39.0 ms, zkey load 47.0 ms, base upload 3.00 ms | ✓ | ✓ |
 
 **withdraw**
 
 | Config | Full proof median / p90 | Witness median | Proof minus witness | One-time setup | Verifies (snarkjs) | Public signals = fixture |
 |---|---|---|---|---|---|---|
-| snarkjs fullProve, default (web workers / worker_threads) | 581 ms / 591 ms | 23.2 ms | 558 ms | none (snarkjs re-reads the zkey on every proof) | ✓ | ✓ |
-| snarkjs fullProve, singleThread | 4.41 s / 4.50 s | 23.5 ms | 4.38 s | none (snarkjs re-reads the zkey on every proof) | ✓ | ✓ |
-| lowki-groth16 wasm, CPU (1 thread) | 2.05 s / 2.05 s | 25.6 ms | 2.02 s | zkey load 29.7 ms | ✓ | ✓ |
-| lowki-groth16 wasm, WebGPU | 263 ms / 268 ms | – | – | GPU open 5.00 ms, zkey load 25.0 ms, base upload 25.0 ms | ✓ | ✓ |
+| snarkjs fullProve, default (web workers / worker_threads) | 603 ms / 607 ms | 23.5 ms | 580 ms | none (snarkjs re-reads the zkey on every proof) | ✓ | ✓ |
+| snarkjs fullProve, singleThread | 4.38 s / 4.41 s | 23.8 ms | 4.36 s | none (snarkjs re-reads the zkey on every proof) | ✓ | ✓ |
+| lowki-groth16 wasm, CPU (1 thread) | 2.08 s / 2.09 s | 28.3 ms | 2.05 s | zkey load 69.6 ms | ✓ | ✓ |
+| lowki-groth16 wasm, WebGPU | 168 ms / 177 ms | – | – | GPU open 6.00 ms, zkey load 66.0 ms, base upload 39.0 ms | ✓ | ✓ |
 
 #### Groth16, native / Node
 
@@ -98,15 +98,25 @@
 | lowki-groth16 native, rayon (`parallel`) | 229 ms / 233 ms | 111 ms | 118 ms | zkey load 12.4 ms | ✓ | ✓ |
 | lowki-groth16 native, Metal | 228 ms / 238 ms | – | – | GPU open 11.8 ms, base upload 39.0 ms | ✓ | ✓ |
 
-### Groth16 in Chrome: before / after running the witness on the host WebAssembly engine
+### Groth16 in Chrome, round 1: witness on the host WebAssembly engine (before → after)
 
 | Config | commitment before | commitment after | withdraw before | withdraw after | withdraw witness before → after |
 |---|---|---|---|---|---|
 | lowki wasm, CPU (1 thread) | 142 ms / 144 ms | 126 ms / 127 ms | 2.85 s / 2.88 s | 2.05 s / 2.05 s | 828 ms → 25.6 ms |
 | lowki wasm, WebGPU | 91.9 ms / 106 ms | 62.9 ms / 70.9 ms | 1.08 s / 1.10 s | 263 ms / 268 ms | – |
 | lowki wasm, WebGPU, no COOP/COEP | 89.9 ms / 93.4 ms | 62.8 ms / 80.2 ms | 1.10 s / 1.11 s | 263 ms / 269 ms | – |
-| snarkjs, default workers (reference, unchanged code) | 40.3 ms / 41.2 ms | 39.9 ms / 42.1 ms | 606 ms / 619 ms | 581 ms / 591 ms | 23.7 ms → 23.2 ms |
-| snarkjs, default workers, no COOP/COEP | 41.5 ms / 42.1 ms | 38.3 ms / 42.0 ms | 605 ms / 624 ms | 588 ms / 593 ms | 24.6 ms → 23.0 ms |
+| snarkjs, default workers (reference, unchanged code) | 40.3 ms / 41.2 ms | 39.9 ms / 42.1 ms | 606 ms / 619 ms | 581 ms / 591 ms | – |
+| snarkjs, default workers, no COOP/COEP | 41.5 ms / 42.1 ms | 38.3 ms / 42.0 ms | 605 ms / 624 ms | 588 ms / 593 ms | – |
+
+### Groth16 in Chrome, round 2: GPU QAP/NTT + CPU G2 for small circuits (round 1 → round 2)
+
+| Config | commitment before | commitment after | withdraw before | withdraw after | withdraw witness before → after |
+|---|---|---|---|---|---|
+| lowki wasm, CPU (1 thread) | 126 ms / 127 ms | 127 ms / 134 ms | 2.05 s / 2.05 s | 2.08 s / 2.09 s | 25.6 ms → 28.3 ms |
+| lowki wasm, WebGPU | 62.9 ms / 70.9 ms | 47.6 ms / 48.5 ms | 263 ms / 268 ms | 168 ms / 177 ms | – |
+| lowki wasm, WebGPU, no COOP/COEP | 62.8 ms / 80.2 ms | 46.7 ms / 47.2 ms | 263 ms / 269 ms | 173 ms / 218 ms | – |
+| snarkjs, default workers (reference, unchanged code) | 39.9 ms / 42.1 ms | 39.0 ms / 41.5 ms | 581 ms / 591 ms | 603 ms / 607 ms | – |
+| snarkjs, default workers, no COOP/COEP | 38.3 ms / 42.0 ms | 39.1 ms / 41.2 ms | 588 ms / 593 ms | 580 ms / 590 ms | – |
 
 ### Payload size
 
@@ -116,7 +126,7 @@
 | pp | lowki-pp-core | 91.6 KiB (wasm 230.0 KiB raw) | 512.3 KiB (wasm 1436.2 KiB raw) | Kohaku poseidon + LeanIMT + SignatureSecretManager + commitment/context (maci-crypto, viem) | 1495.3 KiB | 691.2 KiB | **7.5× smaller** |
 | stealth | lowki-stealth | 43.2 KiB (wasm 108.5 KiB raw) | 34.4 KiB (wasm 73.7 KiB raw) | ScopeLift SDK (noble/secp256k1) + viem encode/decode | 74.9 KiB | 24.5 KiB | 1.8× larger |
 | aa | lowki-aa | 75.0 KiB (wasm 194.4 KiB raw) | 63.0 KiB (wasm 139.1 KiB raw) | Kohaku paymaster encoders + buildSignedUserOp (viem) | 93.0 KiB | 31.5 KiB | 2.4× larger |
-| g16 | lowki-groth16 (CPU) | 485.4 KiB (wasm 1664.7 KiB raw) | 367.7 KiB (wasm 1244.5 KiB raw) | snarkjs groth16 (fullProve + verify) | 305.0 KiB | 67.4 KiB | 7.2× larger |
-| webgpu | lowki-groth16 + lowki-gpu (WebGPU) | 563.7 KiB (wasm 1867.4 KiB raw) | 421.7 KiB (wasm 1362.3 KiB raw) | snarkjs groth16 (fullProve + verify) | 305.0 KiB | 67.4 KiB | 8.4× larger |
-| all | all six crates in one module | 734.8 KiB (wasm 2330.6 KiB raw) | 987.1 KiB (wasm 2941.6 KiB raw) | all of the above in one bundle | 1928.5 KiB | 804.4 KiB | **1.1× smaller** |
+| g16 | lowki-groth16 (CPU) | 500.8 KiB (wasm 1705.0 KiB raw) | 376.0 KiB (wasm 1261.9 KiB raw) | snarkjs groth16 (fullProve + verify) | 305.0 KiB | 67.4 KiB | 7.4× larger |
+| webgpu | lowki-groth16 + lowki-gpu (WebGPU) | 599.8 KiB (wasm 1982.3 KiB raw) | 436.5 KiB (wasm 1397.6 KiB raw) | snarkjs groth16 (fullProve + verify) | 305.0 KiB | 67.4 KiB | 8.9× larger |
+| all | all six crates in one module | 768.1 KiB (wasm 2437.8 KiB raw) | 999.1 KiB (wasm 2971.7 KiB raw) | all of the above in one bundle | 1928.5 KiB | 804.4 KiB | **1.0× smaller** |
 

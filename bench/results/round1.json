@@ -1,0 +1,55 @@
+{
+ "note": "Round-1 Chrome results (after the host-WebAssembly witness change, before round 2): [median_ms, p90_ms, witness_median_ms?], transcribed from RESULTS.md as published, because round-2 tuning runs overwrote the raw JSON of the two wasm suites. Round-1 snarkjs numbers are the same transcription.",
+ "browser-g16-wasm-cpu.json": {
+  "g16.commitment.wasm_cpu": [
+   125.8,
+   126.8,
+   1.275
+  ],
+  "g16.withdraw.wasm_cpu": [
+   2045.9,
+   2054.2,
+   25.585
+  ]
+ },
+ "browser-g16-wasm-gpu.json": {
+  "g16.commitment.wasm_webgpu": [
+   62.9,
+   70.9
+  ],
+  "g16.withdraw.wasm_webgpu": [
+   263.4,
+   268.1
+  ]
+ },
+ "browser-g16-wasm-gpu-noiso.json": {
+  "g16.commitment.wasm_webgpu": [
+   62.8,
+   80.2
+  ],
+  "g16.withdraw.wasm_webgpu": [
+   263.2,
+   269.1
+  ]
+ },
+ "browser-g16-snarkjs-mt.json": {
+  "g16.commitment.snarkjs_mt": [
+   39.9,
+   42.1
+  ],
+  "g16.withdraw.snarkjs_mt": [
+   581.3,
+   590.6
+  ]
+ },
+ "browser-g16-snarkjs-mt-noiso.json": {
+  "g16.commitment.snarkjs_mt": [
+   38.3,
+   42.0
+  ],
+  "g16.withdraw.snarkjs_mt": [
+   588.2,
+   593.1
+  ]
+ }
+}
