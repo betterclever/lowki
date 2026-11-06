@@ -57,6 +57,7 @@
       <dt>Address</dt><dd id="address">not signed in</dd>
       <dt>Pairwise user ID</dt><dd id="userid">-</dd>
       <dt>Access token</dt><dd id="token">-</dd>
+      <dt>Last signature</dt><dd id="signature">-</dd>
     </dl>
     <h2>postMessage events</h2>
     <ul id="log" aria-live="polite"></ul>
@@ -66,15 +67,23 @@
   </section>
 </main>
 <script>
-  // Wallet location: ?wallet=http://127.0.0.1:8080/ (defaults to trunk serve).
+  // Wallet location: ?wallet=http://localhost:8080/ (defaults to trunk serve; passkeys need
+  // the `localhost` host name, not 127.0.0.1).
+  // ?app=<lowki-server app id> and ?app_name=<shown name> pick the app (default: the mock's game-x).
   const params = new URLSearchParams(location.search);
   const root = document.documentElement;
   const theme = params.get("theme");
   if (theme === "light" || theme === "dark") root.dataset.theme = theme;
-  const WALLET = new URL(params.get("wallet") || "http://127.0.0.1:8080/");
+  const WALLET = new URL(params.get("wallet") || "http://localhost:8080/");
+  const APP = params.get("app") || "game-x";
+  const APP_NAME = params.get("app_name");
+  if (APP_NAME) {
+    document.querySelector("header b").textContent = APP_NAME;
+    document.title = APP_NAME + " · Lowki demo";
+  }
   const extra = params.get("walletflags") || "";
   const frame = document.getElementById("wallet");
-  frame.src = WALLET.href + "?app=game-x&embed=1" + (root.dataset.theme ? "&theme=" + root.dataset.theme : "") + "&origin=" + encodeURIComponent(location.origin) + (extra ? "&" + extra : "");
+  frame.src = WALLET.href + "?app=" + encodeURIComponent(APP) + (APP_NAME ? "&app_name=" + encodeURIComponent(APP_NAME) : "") + "&embed=1" + (root.dataset.theme ? "&theme=" + root.dataset.theme : "") + "&origin=" + encodeURIComponent(location.origin) + (extra ? "&" + extra : "");
 
   const log = (dir, msg) => {
     const li = document.createElement("li");
@@ -99,8 +108,11 @@
       document.getElementById("userid").textContent = m.user_id;
       document.getElementById("token").textContent = m.access_token;
     }
+    if (m.type === "message_signed" || m.type === "typed_data_signed") {
+      document.getElementById("signature").textContent = m.signature;
+    }
     if (m.type === "signed_out") {
-      for (const id of ["address", "userid", "token"]) document.getElementById(id).textContent = "-";
+      for (const id of ["address", "userid", "token", "signature"]) document.getElementById(id).textContent = "-";
     }
   });
 
