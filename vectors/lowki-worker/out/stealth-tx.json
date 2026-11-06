@@ -1,0 +1,19 @@
+{
+  "from": "0x94810D690d5382282e977AF90EcC57D30A41E3EF",
+  "signed": {
+    "address": "0x94810D690d5382282e977AF90EcC57D30A41E3EF",
+    "hash": "0xd61dfd10a0da72d87a6ec30a9e27bb5bae177caffb48d712f9e306fd542a59a3",
+    "rawTransaction": "0x02f86b83aa36a7808203e88207d08252089400000000000000000000000000000000000000aa82303980c001a089cd808539ce27d77a96ff85140532f0cee13a60541a5c914d346fbbc00b3586a07920ebc0f972d5cfe6e9f11f36b665c747ec98b54e5eda89ffbbe020ccf74c6f",
+    "type": "signedTransaction"
+  },
+  "tx": {
+    "chainId": "11155111",
+    "gas": "21000",
+    "maxFeePerGas": "2000",
+    "maxPriorityFeePerGas": "1000",
+    "nonce": "0",
+    "to": "0x00000000000000000000000000000000000000aa",
+    "type": "eip1559",
+    "value": "12345"
+  }
+}
