@@ -29,7 +29,7 @@ Servers (self-hostable, one docker compose)
 
 ## Keys
 
-- **Seed:** 16 bytes of entropy generated in the Rust worker, turned into a BIP-39 mnemonic and then a BIP-32 seed.
+- **Seed:** 32 bytes of entropy (24 words) generated in the Rust worker, turned into a BIP-39 mnemonic and then a BIP-32 seed.
 - **Unlock:** the passkey PRF goes through HKDF ("lowki/kek/v1") to give an AES-GCM key, which wraps the entropy. The wrapped blob is `0x01 || nonce12 || ct+tag`. It can be stored anywhere because it is useless without the passkey.
 - **Same wallet on every device:** the passkey lives on the Lowki origin, so one RP ID covers every app. Passkey sync (iCloud, Google Password Manager) carries the wallet across devices.
 - **Per-app account:** `index = u32_be(keccak("lowki/app/v1" || origin)[0..4]) & 0x7fffffff`, derived on the device.
@@ -48,7 +48,7 @@ Servers (self-hostable, one docker compose)
 3. lowki-server exchanges the code with the client secret, which stays on the server, and verifies the ID token: JWKS, `aud`, `iss` and `nonce`.
 4. The server stores `HMAC(server_secret, "google:" || sub)`. It does not store the email.
 5. The worker generates the seed. The user creates a passkey, and the PRF wraps the seed.
-6. The worker splits the seed 2-of-3 with Shamir. The scheme is byte-wise GF(2^8), compatible with Privy's `shamir-secret-sharing`, with 17-byte shares for 16-byte entropy:
+6. The worker splits the seed 2-of-3 with Shamir. The scheme is byte-wise GF(2^8), compatible with Privy's `shamir-secret-sharing`, with 33-byte shares for 32-byte entropy:
    - **P:** wrapped by the passkey.
    - **S:** held by the server and released only for a valid Google session.
    - **R:** a recovery code, or a backup to iCloud or Drive.
