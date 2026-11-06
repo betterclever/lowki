@@ -3,7 +3,9 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use crate::backend::{GasQuote, TxRequest, backend};
+use std::rc::Rc;
+
+use crate::backend::{Amount, GasQuote, ProgressFn, ProofProgress, ProofStage, SendRequest, TxRequest, backend};
 use crate::format::{Field, decode_typed, short_addr};
 use crate::protocol::{RejectReason, WalletToDapp};
 use crate::state::ctx;
@@ -256,6 +258,69 @@ pub fn ConfirmTx(id: String, tx: TxRequest) -> impl IntoView {
                 }.into_any(),
             }}
             <Decide approve="Approve" busy=busy disabled=loading on_approve=approve on_reject=reject />
+        </Sheet>
+    }
+}
+
+/// `send_privately` from the app: a private transfer from the user's private balance.
+/// The proof is built in this browser; the recipient can't see which account sent it.
+#[component]
+pub fn ConfirmPrivate(id: String, to: String, amount: Amount) -> impl IntoView {
+    let c = ctx();
+    let busy = RwSignal::new(false);
+    let stage = RwSignal::new(None::<ProofStage>);
+    let err = RwSignal::new(None::<String>);
+    let (id_a, id_r, to_a) = (id.clone(), id.clone(), to.clone());
+    let approve = move || {
+        busy.set(true);
+        err.set(None);
+        let (id, req) = (id_a.clone(), SendRequest { to: to_a.clone(), amount, private: true });
+        let progress: ProgressFn = Rc::new(move |p: ProofProgress| stage.set(Some(p.stage)));
+        spawn_local(async move {
+            let r = backend().send(&c.app.get_untracked(), req, progress).await;
+            busy.set(false);
+            match r {
+                Ok(rc) => {
+                    c.post(WalletToDapp::PrivateSent { id, hash: rc.hash });
+                    c.say("Sent privately");
+                    c.done();
+                }
+                // Field-level errors (bad address, not enough private balance) end the
+                // request; the sheet stays to say why until the user closes it.
+                Err(e) => {
+                    c.reject(&id, RejectReason::NetworkError, &e.message());
+                    if let Some(m) = c.fail(e) {
+                        err.set(Some(m));
+                    }
+                }
+            }
+        });
+    };
+    let reject = move || {
+        c.reject(&id_r, RejectReason::UserRejected, "User cancelled");
+        c.done();
+    };
+    let reject_x = reject.clone();
+    let stage_text = move || {
+        stage.get().map(|s| match s {
+            ProofStage::SyncingPool => "Syncing the private pool…",
+            ProofStage::BuildingProof => "Building the proof on this device…",
+            ProofStage::Submitting => "Submitting…",
+        })
+    };
+    view! {
+        <Sheet class="request" action=TopAction::Close on_close=Callback::new(move |_| reject_x())>
+            <h1 class="title" tabindex="-1">"Send privately?"</h1>
+            <Requester verb="wants you to send privately" />
+            <dl class="kvs" data-test="private-preview">
+                <Kv k="To"><Address addr=to.clone() what="recipient address" /></Kv>
+                <Kv k="Amount"><span class="mono">{amount.fmt()}</span></Kv>
+                <Kv k="From"><span>"Your private balance"</span></Kv>
+            </dl>
+            <p class="note"><Icon i=Ic::Info size=16 />"The recipient sees the money arrive, not which account sent it."</p>
+            <p class="hint" role="status" aria-live="polite">{stage_text}</p>
+            <p class="error-text" role="alert">{move || err.get()}</p>
+            <Decide approve="Send privately" busy=busy disabled=Signal::derive(move || err.get().is_some()) on_approve=approve on_reject=reject />
         </Sheet>
     }
 }

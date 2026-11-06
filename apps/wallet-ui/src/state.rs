@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 use crate::backend::{
-    AppInfo, DelegationPolicy, RecoveryCode, Session, TxRequest, VaultDirection, WalletError,
+    AppInfo, Amount, DelegationPolicy, RecoveryCode, Session, TxRequest, VaultDirection, WalletError,
 };
 use crate::platform::Platform;
 use crate::protocol::{self, RejectReason, WalletToDapp};
@@ -26,6 +26,8 @@ pub enum Screen {
     ConfirmMessage { id: String, message: String },
     ConfirmTyped { id: String, data: serde_json::Value },
     ConfirmTx { id: String, tx: TxRequest },
+    /// `send_privately` from the app.
+    ConfirmPrivate { id: String, to: String, amount: Amount },
     Delegation { id: String, policy: DelegationPolicy },
     Error(ErrorKind),
 }
@@ -61,6 +63,10 @@ pub struct Ctx {
     pub recovering: RwSignal<bool>,
     /// Show "Continue with Google" (off unless the backend has it, or `google=1`).
     pub show_google: RwSignal<bool>,
+    /// The wallet was created in the current sign-in (`is_new_user`).
+    pub new_user: RwSignal<bool>,
+    /// The email the user chose to share with this app (never set without that choice).
+    pub shared_email: RwSignal<Option<String>>,
 }
 
 impl Ctx {
@@ -80,6 +86,8 @@ impl Ctx {
             recovery_reminder: RwSignal::new(false),
             recovering: RwSignal::new(false),
             show_google: RwSignal::new(true),
+            new_user: RwSignal::new(false),
+            shared_email: RwSignal::new(None),
         }
     }
 
@@ -163,12 +171,43 @@ impl Ctx {
     pub fn announce_session(&self, s: &Session) {
         let id = self.sign_in_request.get_untracked();
         self.sign_in_request.set(None);
-        self.post(WalletToDapp::Authenticated {
+        self.post(self.authenticated(s, id));
+        self.new_user.set(false);
+    }
+
+    /// The `authenticated` message for `s`: only values scoped to this app.
+    pub fn authenticated(&self, s: &Session, id: Option<String>) -> WalletToDapp {
+        WalletToDapp::Authenticated {
             id,
             address: s.address.clone(),
             user_id: s.user_id.clone(),
             access_token: s.access_token.clone(),
-        });
+            created_at: first_seen(&self.app.get_untracked().id, &s.address),
+            is_new_user: self.new_user.get_untracked(),
+            email: self.shared_email.get_untracked(),
+        }
+    }
+
+    /// Forget per-sign-in choices (sign-out).
+    pub fn clear_sign_in(&self) {
+        self.new_user.set(false);
+        self.shared_email.set(None);
+    }
+}
+
+/// When this wallet first saw the app account (ISO 8601), remembered in the wallet
+/// origin's storage (partitioned per app in an iframe). Per app and per address, so it
+/// links nothing across apps. Falls back to now when storage is unavailable.
+fn first_seen(app_id: &str, address: &str) -> String {
+    let now = js_sys::Date::new_0().to_iso_string().as_string().unwrap_or_default();
+    let Some(ls) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) else { return now };
+    let key = format!("lowki:first_seen:{app_id}:{}", address.to_lowercase());
+    match ls.get_item(&key).ok().flatten() {
+        Some(t) if !t.is_empty() => t,
+        _ => {
+            let _ = ls.set_item(&key, &now);
+            now
+        }
     }
 }
 

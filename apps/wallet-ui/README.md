@@ -134,30 +134,36 @@ The protocol is defined in `src/protocol.rs` as `DappToWallet` and `WalletToDapp
 { "lowki": 1, "type": "<snake_case variant>", ...fields }
 ```
 
-App requests carry an `id`, and the wallet's answer echoes it. The wallet posts only to the configured `origin` and ignores messages from other origins. It also only ever reveals the pairwise address and user ID for the embedding app.
+App requests carry an `id`, and the wallet's answer echoes it. The wallet posts only to the configured `origin` and ignores messages from other origins. It also only ever reveals the pairwise address and user ID for the embedding app. Additions after the first v1 wallet are optional fields or new types announced in `ready.capabilities`; old messages parse unchanged. In a popup the wallet answers its opener, in an iframe its parent.
 
 **App to wallet**
 
 | type | fields | what happens |
 |---|---|---|
 | `sign_in` | `id` | Opens the sign-in sheet, or re-announces the session if the user is already signed in |
+| `get_session` | `id` | Silent: `authenticated` (token re-issued if it has under a minute left) or `rejected{not_signed_in}`; never changes the screen |
 | `sign_message` | `id`, `message` | Opens the message confirmation sheet |
-| `sign_typed_data` | `id`, `typed_data` (eth_signTypedData_v4 JSON) | Opens the typed-data sheet |
-| `send_transaction` | `id`, `tx: { to, value (wei, decimal string), data }` | Opens the transaction sheet |
+| `sign_typed_data` | `id`, `typed_data` (eth_signTypedData_v4 JSON), `chain_id?` | Opens the typed-data sheet; `invalid_request` if `domain.chainId` and `chain_id` differ |
+| `send_transaction` | `id`, `tx: { to, value (wei, decimal string), data }`, `chain_id?` | Opens the transaction sheet; `unsupported_chain` if the real backend is on another chain |
+| `send_privately` | `id`, `to`, `amount` (decimal string), `asset` (`ETH`, `USDC`, `MON`), `chain_id?` | Opens the "Send privately?" sheet, then the backend's private send |
 | `request_delegation` | `id`, `policy: { chain, expires (YYYY-MM-DD), rules: [ {kind: "swap", router, router_label?, token, max_per_day} \| {kind: "call", contract, contract_label?, function, max_per_day?} \| {kind: "transfer", to, token, max_per_day} ] }` | Opens the consent sheet; Lowki rejects policies with no cap or an open recipient |
 | `sign_out` | `id` | Signs out of this app |
+| `cancel` | `id` (of the open request) | The app closed its modal: the sheet closes and that request is answered `rejected{user_rejected}` |
 
 **Wallet to app**
 
 | type | fields |
 |---|---|
-| `ready` | `app_id` |
-| `authenticated` | `id?`, `address`, `user_id` (pairwise), `access_token` |
+| `ready` | `app_id`, `capabilities` (request types this build understands) |
+| `authenticated` | `id?`, `address`, `user_id` (pairwise), `access_token`, `created_at` (ISO 8601, when this wallet first saw the app account), `is_new_user`, `email?` (only if the user ticked "Share this email") |
 | `message_signed` / `typed_data_signed` | `id`, `signature` |
 | `transaction_sent` | `id`, `hash`, `sponsored` |
+| `private_sent` | `id`, `hash` |
 | `delegation_approved` | `id`, `delegation_id`, `expires`, `attestation_build` |
 | `delegation_revoked` | `delegation_id` (the user revoked it in Settings) |
-| `rejected` | `id`, `reason`: `user_rejected` \| `policy_rejected` \| `not_signed_in` \| `network_error` \| `busy`, `message` |
+| `rejected` | `id`, `reason`: `user_rejected` \| `policy_rejected` \| `not_signed_in` \| `network_error` \| `busy` \| `unsupported_chain` \| `invalid_request`, `message` |
+
+**Popup to iframe.** A popup sign-in (Safari can't create a passkey in a cross-origin iframe) unlocks only the popup's key worker. The seed never leaves a worker, so the iframe signs itself in: the app's next request finds it without a session (`get_session` → `not_signed_in`), the SDK sends `sign_in` to the iframe, and the user taps the passkey (`get` works in cross-origin iframes). That also gives the iframe its own lowki-server session cookie.
 | `signed_out` | `id?` |
 
 ## The real backend (`src/backend/real/`)

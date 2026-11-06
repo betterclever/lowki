@@ -28,7 +28,10 @@ pub fn finish_sign_in(c: Ctx) {
 
 fn route_outcome(c: Ctx, o: AuthOutcome) {
     match o {
-        AuthOutcome::NewUser => c.go(Screen::SecureWallet),
+        AuthOutcome::NewUser => {
+            c.new_user.set(true);
+            c.go(Screen::SecureWallet)
+        }
         AuthOutcome::NeedsPasskey => c.go(Screen::Unlock),
     }
 }
@@ -91,6 +94,14 @@ pub fn SignIn() -> impl IntoView {
     };
 
     let email_open = RwSignal::new(false);
+    // Not the `autofocus` attribute: Chrome blocks it in a cross-origin iframe (and logs a
+    // warning). Focusing after the user's click is allowed.
+    let email_ref = NodeRef::<leptos::html::Input>::new();
+    Effect::new(move || {
+        if let Some(el) = email_ref.get() {
+            let _ = el.focus();
+        }
+    });
     view! {
         <Sheet bare=true class="signin">
             <div class="hero">
@@ -122,7 +133,7 @@ pub fn SignIn() -> impl IntoView {
                         <form class="email-form" on:submit=move |ev| { ev.prevent_default(); send_code(); }>
                             <label class="label" for="email">"Email"</label>
                             <div class="field-row">
-                                <input id="email" class="input" type="email" inputmode="email" autocomplete="email" autofocus
+                                <input id="email" class="input" type="email" inputmode="email" autocomplete="email" node_ref=email_ref
                                     placeholder="you@example.com" prop:value=move || email.get()
                                     aria-invalid=move || err.get().is_some().to_string()
                                     aria-describedby="signin-err" data-test="email-input"
@@ -146,7 +157,7 @@ pub fn SignIn() -> impl IntoView {
                 <p id="signin-err" class="error-text" role="alert">{move || err.get()}</p>
             </div>
             <p class="fine">
-                {app.name.clone()} " gets its own address for you. It can't see your email or your other apps."
+                {app.name.clone()} " gets its own address for you. It can't see your other apps, or your email unless you share it."
             </p>
         </Sheet>
     }
@@ -159,6 +170,9 @@ pub fn EmailCode(email: String) -> impl IntoView {
     let busy = RwSignal::new(false);
     let err = RwSignal::new(None::<String>);
     let resent = RwSignal::new(false);
+    // Off by default: the app learns the email only if the user ticks the box.
+    let share = RwSignal::new(false);
+    let app_name = c.app.get_untracked().name;
     let email_v = email.clone();
     let verify = move || {
         let code_s: String = code.get_untracked().chars().filter(|c| c.is_ascii_digit()).collect();
@@ -173,7 +187,10 @@ pub fn EmailCode(email: String) -> impl IntoView {
             let r = backend().verify_email_code(&email, &code_s).await;
             busy.set(false);
             match r {
-                Ok(o) => route_outcome(c, o),
+                Ok(o) => {
+                    c.shared_email.set(share.get_untracked().then(|| email.trim().to_lowercase()));
+                    route_outcome(c, o)
+                }
                 Err(e) => err.set(c.fail(e)),
             }
         });
@@ -207,6 +224,11 @@ pub fn EmailCode(email: String) -> impl IntoView {
                         code.set(v);
                     } />
                 <p id="code-err" class="error-text" role="alert">{move || err.get()}</p>
+                <label class="check" style="display:flex;gap:8px;align-items:center;font-size:14px;margin:4px 0 8px">
+                    <input type="checkbox" data-test="share-email" prop:checked=move || share.get()
+                        on:change=move |ev| share.set(event_target_checked(&ev)) />
+                    <span>"Share this email with " {app_name}</span>
+                </label>
                 <Btn label="Continue".to_string() busy_label="Checking…" busy=busy test="email-verify" on_click=move || verify2() />
             </form>
             <div class="row-links">

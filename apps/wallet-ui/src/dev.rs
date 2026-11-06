@@ -291,8 +291,8 @@ pub fn DevPanel(on_request: Callback<DappToWallet>) -> impl IntoView {
                     <p class="label">"Simulate app request"</p>
                     <div class="dev-grid">
                         <button class="btn secondary sm" type="button" on:click=move |_| req(DappToWallet::SignMessage { id: next_id(), message: sample_message(&c.app.get_untracked()) })>"Message"</button>
-                        <button class="btn secondary sm" type="button" on:click=move |_| req(DappToWallet::SignTypedData { id: next_id(), typed_data: sample_typed(&c.app.get_untracked()) })>"Typed data"</button>
-                        <button class="btn secondary sm" type="button" on:click=move |_| req(DappToWallet::SendTransaction { id: next_id(), tx: sample_tx(&c.app.get_untracked()) })>"Transaction"</button>
+                        <button class="btn secondary sm" type="button" on:click=move |_| req(DappToWallet::SignTypedData { id: next_id(), typed_data: sample_typed(&c.app.get_untracked()), chain_id: None })>"Typed data"</button>
+                        <button class="btn secondary sm" type="button" on:click=move |_| req(DappToWallet::SendTransaction { id: next_id(), tx: sample_tx(&c.app.get_untracked()), chain_id: None })>"Transaction"</button>
                         <button class="btn secondary sm" type="button" on:click=move |_| req(DappToWallet::RequestDelegation { id: next_id(), policy: sample_policy() })>"Delegation"</button>
                         <button class="btn secondary sm" type="button" on:click=move |_| req(DappToWallet::RequestDelegation { id: next_id(), policy: sample_bad_policy() })>"Bad policy"</button>
                     </div>
