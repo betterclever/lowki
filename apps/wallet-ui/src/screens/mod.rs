@@ -5,3 +5,4 @@ pub mod home;
 pub mod onboarding;
 pub mod send;
 pub mod settings;
+pub mod wallet_home;

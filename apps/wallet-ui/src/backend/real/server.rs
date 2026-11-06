@@ -52,6 +52,19 @@ impl Server {
         self.call("PUT", path, Some(body)).await
     }
 
+    /// GET with extra request headers (the ENS records auth).
+    pub async fn get_with_headers(&self, path: &str, extra: &[(&str, &str)]) -> Result<Value, ServerError> {
+        let (status, v) = self.raw_h("GET", path, None, extra).await?;
+        if !(200..300).contains(&status) {
+            return Err(ServerError::Status {
+                status,
+                code: v.get("error").and_then(Value::as_str).unwrap_or_default().to_string(),
+                message: v.get("message").and_then(Value::as_str).unwrap_or_default().to_string(),
+            });
+        }
+        Ok(v)
+    }
+
     /// Returns the JSON body for 2xx (202 included).
     pub async fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value, ServerError> {
         let (status, v) = self.raw(method, path, body.as_ref()).await?;
@@ -67,6 +80,10 @@ impl Server {
     }
 
     async fn raw(&self, method: &str, path: &str, body: Option<&Value>) -> Result<(u16, Value), ServerError> {
+        self.raw_h(method, path, body, &[]).await
+    }
+
+    async fn raw_h(&self, method: &str, path: &str, body: Option<&Value>, extra: &[(&str, &str)]) -> Result<(u16, Value), ServerError> {
         let init = web_sys::RequestInit::new();
         init.set_method(method);
         init.set_credentials(web_sys::RequestCredentials::Include);
@@ -79,6 +96,9 @@ impl Server {
         }
         if let Some(t) = self.csrf.borrow().as_deref() {
             let _ = headers.set("x-lowki-csrf", t);
+        }
+        for (k, v) in extra {
+            let _ = headers.set(k, v);
         }
         init.set_headers(&headers);
         let url = format!("{SERVER_URL}{path}");

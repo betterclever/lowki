@@ -358,3 +358,34 @@ h1:focus, h1:focus-visible { outline: none; }
 .conn .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lk-warning); align-self: center; flex: none; }
 .conn.private .conn-dot { background: var(--lk-success); }
 .conn .conn-detail { flex-basis: 100%; padding-left: 15px; }
+
+/* ---------- wallet home (the Lowki origin opened directly) ---------- */
+.home-head .who { color: var(--lk-text); font-weight: 500; }
+.home-hero .sub { max-width: 32ch; }
+.skel.on-ink { background: var(--private-line); }
+.row-icon.accent { background: var(--lk-lauki-soft); color: var(--lk-accent-text); }
+.name-card { border: var(--lk-border); border-radius: var(--lk-radius-lg); padding: var(--lk-space-4); display: flex; flex-direction: column; gap: var(--lk-space-3); }
+.name-card.ready { background: var(--lk-flesh); border-color: transparent; }
+.claim-head { display: flex; gap: var(--lk-space-3); align-items: flex-start; }
+.claim-title { font-weight: 600; font-size: 15px; }
+.name-input { display: flex; align-items: stretch; border: 1px solid var(--lk-line-strong); border-radius: var(--lk-radius-md); background: var(--lk-surface); overflow: hidden; }
+.name-input:focus-within { outline: 2px solid var(--lk-focus); outline-offset: 1px; border-color: transparent; }
+.name-input[data-invalid="true"] { border-color: var(--lk-danger); }
+.name-input .input { border: 0; border-radius: 0; flex: 1; min-width: 0; font-size: var(--lk-text-md); }
+.name-input .input:focus { outline: none; }
+.name-input .input:disabled { background: var(--lk-surface); color: var(--lk-text); }
+.name-suffix { display: grid; place-items: center; padding: 0 14px; color: var(--lk-text-muted); background: var(--lk-surface-2); border-left: var(--lk-border); font-size: var(--lk-text-sm); }
+.name-line { display: flex; align-items: center; gap: var(--lk-space-3); }
+.name-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.name-text { font-size: var(--lk-text-md); font-weight: 500; word-break: break-all; }
+.pay-head { margin-top: var(--lk-space-1); }
+.app-side { display: flex; flex-direction: column; align-items: flex-end; gap: var(--lk-space-1); flex: none; }
+.app-row .chip-addr { padding: 2px 10px; min-height: 28px; font-size: 13px; }
+.try-h { margin-top: var(--lk-space-3); }
+.pick-row { width: 100%; background: transparent; border: 0; border-bottom: var(--lk-border); text-align: left; color: inherit; font: inherit; }
+.list.pick li:last-child .pick-row { border-bottom: 0; }
+.pick-row:hover { background: var(--lk-surface-2); }
+a.btn { text-decoration: none; }
+.claiming .steps { margin: 0; }
+@media (max-width: 380px) { .app-row .row-amt { font-size: 12px; } }
+.home-conn { margin-top: 0; }

@@ -93,6 +93,39 @@ pub trait WalletBackend {
     fn private_report(&self) -> Vec<(String, String)> {
         Vec::new()
     }
+
+    // ---- wallet home (top-level; never reachable from inside an app) ---------------------
+    /// The registered display name and origin of an app ID (`GET /v1/apps/{id}`).
+    fn app_info(&self, _app_id: &str) -> BoxFut<'_, Option<(String, String)>> {
+        Box::pin(async { None })
+    }
+    /// Every app the user has used (the encrypted app list), with addresses and balances.
+    fn home_apps(&self) -> BoxFut<'_, Res<Vec<HomeApp>>> {
+        Box::pin(async { Ok(vec![]) })
+    }
+    /// Demo apps to try (from `lowki-config.json`).
+    fn app_suggestions(&self) -> BoxFut<'_, Vec<Suggestion>> {
+        Box::pin(async { vec![] })
+    }
+    /// The private balance (one per wallet, not per app). `None` when the pool can't be read.
+    fn private_balance(&self) -> BoxFut<'_, Option<Amount>> {
+        Box::pin(async { None })
+    }
+    fn name_status(&self) -> BoxFut<'_, Res<NameStatus>> {
+        Box::pin(async { Ok(NameStatus::default()) })
+    }
+    /// Claims `<label>.<parent>`: the key worker signs, lowki-server submits (sponsored).
+    fn claim_name(&self, _label: &str, _progress: Rc<dyn Fn(ClaimStage)>) -> BoxFut<'_, Res<NameStatus>> {
+        Box::pin(async { Err(WalletError::Other("Names aren't available here.".into())) })
+    }
+    /// Payments to the name's stealth addresses (gateway records, scanned with the viewing key).
+    fn name_payments(&self, _name: &str) -> BoxFut<'_, Res<Vec<StealthPayment>>> {
+        Box::pin(async { Ok(vec![]) })
+    }
+    /// Moves a found payment into the private balance (a pool deposit from the stealth address).
+    fn sweep_payment(&self, _p: &StealthPayment, _progress: ProgressFn) -> BoxFut<'_, Res<SendReceipt>> {
+        Box::pin(async { Err(WalletError::Other("Moving payments isn't available here.".into())) })
+    }
 }
 
 pub trait Backend: AuthBackend + WalletBackend {}

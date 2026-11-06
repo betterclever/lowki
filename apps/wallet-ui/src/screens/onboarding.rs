@@ -104,11 +104,23 @@ pub fn SignIn() -> impl IntoView {
     });
     view! {
         <Sheet bare=true class="signin">
-            <div class="hero">
-                <AppTile app=app.clone() large=true />
-                <h1 class="title" tabindex="-1">"Continue to " {app.name.clone()}</h1>
-                <p class="origin">{app.origin.trim_start_matches("https://").to_string()}</p>
-            </div>
+            {if c.home.get_untracked() {
+                view! {
+                    <div class="hero home-hero">
+                        <span class="glyph lg accent"><Icon i=Ic::Passkey size=28 /></span>
+                        <h1 class="title" tabindex="-1">"Open your wallet"</h1>
+                        <p class="sub">"Your apps, your private balance and your name, in one place. Only you can see this page."</p>
+                    </div>
+                }.into_any()
+            } else {
+                view! {
+                    <div class="hero">
+                        {move || view! { <AppTile app=c.app.get() large=true /> }}
+                        <h1 class="title" tabindex="-1">"Continue to " {move || c.app.with(|a| a.name.clone())}</h1>
+                        <p class="origin">{app.origin.trim_start_matches("https://").to_string()}</p>
+                    </div>
+                }.into_any()
+            }}
             <div class="stack">
                 <button class="btn primary" type="button" data-test="passkey-signin"
                     disabled=move || any_busy.get() aria-busy=move || passkey_busy.get().to_string()
@@ -156,9 +168,15 @@ pub fn SignIn() -> impl IntoView {
                 }}
                 <p id="signin-err" class="error-text" role="alert">{move || err.get()}</p>
             </div>
-            <p class="fine">
-                {app.name.clone()} " gets its own address for you. It can't see your other apps, or your email unless you share it."
-            </p>
+            {if c.home.get_untracked() {
+                view! { <p class="fine">"Each app you use gets its own address. No app can see this page."</p> }.into_any()
+            } else {
+                view! {
+                    <p class="fine">
+                        {move || c.app.with(|a| a.name.clone())} " gets its own address for you. It can't see your other apps, or your email unless you share it."
+                    </p>
+                }.into_any()
+            }}
         </Sheet>
     }
 }
@@ -224,11 +242,13 @@ pub fn EmailCode(email: String) -> impl IntoView {
                         code.set(v);
                     } />
                 <p id="code-err" class="error-text" role="alert">{move || err.get()}</p>
-                <label class="check" style="display:flex;gap:8px;align-items:center;font-size:14px;margin:4px 0 8px">
-                    <input type="checkbox" data-test="share-email" prop:checked=move || share.get()
-                        on:change=move |ev| share.set(event_target_checked(&ev)) />
-                    <span>"Share this email with " {app_name}</span>
-                </label>
+                {(!c.home.get_untracked()).then(|| view! {
+                    <label class="check" style="display:flex;gap:8px;align-items:center;font-size:14px;margin:4px 0 8px">
+                        <input type="checkbox" data-test="share-email" prop:checked=move || share.get()
+                            on:change=move |ev| share.set(event_target_checked(&ev)) />
+                        <span>"Share this email with " {app_name.clone()}</span>
+                    </label>
+                })}
                 <Btn label="Continue".to_string() busy_label="Checking…" busy=busy test="email-verify" on_click=move || verify2() />
             </form>
             <div class="row-links">

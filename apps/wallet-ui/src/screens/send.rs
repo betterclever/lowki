@@ -142,7 +142,7 @@ pub fn ProofSteps(
 }
 
 #[component]
-fn DoneView(title: String, amount: Amount, detail: String, receipt: SendReceipt) -> impl IntoView {
+pub(crate) fn DoneView(title: String, amount: Amount, detail: String, receipt: SendReceipt) -> impl IntoView {
     let c = ctx();
     // What really happened (stage times, proof backend and time, fee), when the backend knows.
     let report = if receipt.private { backend().private_report() } else { vec![] };

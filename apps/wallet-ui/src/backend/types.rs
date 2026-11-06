@@ -440,3 +440,99 @@ pub struct ChainConnection {
     /// Which network (Nox, Nym…) or the reason it's direct.
     pub detail: String,
 }
+
+// ---- wallet home (top-level, not in an app) ------------------------------------------------
+
+/// An app the user has used, as the wallet home lists it (only the user sees this).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HomeApp {
+    pub app: AppInfo,
+    /// The app account's address (`appAccount(origin)` in the key worker).
+    pub address: String,
+    /// Native balance; `None` while unknown or when the read failed.
+    pub balance: Option<Amount>,
+}
+
+/// A demo app offered on the home (`demoApps` in `lowki-config.json`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Suggestion {
+    pub name: String,
+    pub url: String,
+    #[serde(default)]
+    pub blurb: Option<String>,
+}
+
+/// The user's `<label>.<parent>` name.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct NameStatus {
+    /// The server sponsors claims.
+    pub enabled: bool,
+    /// e.g. "lowki.eth".
+    pub parent: String,
+    /// Full name once claimed (or being claimed).
+    pub name: Option<String>,
+    /// Registered and set up: lookups resolve.
+    pub ready: bool,
+    pub register_tx: Option<String>,
+    pub setup_tx: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClaimStage {
+    /// The key worker signs the registration and the owner batch.
+    Signing,
+    /// The registrar transaction.
+    Registering,
+    /// The owner batch: resolver, stealth record, gateway.
+    SettingUp,
+}
+
+/// A payment found at one of the name's stealth addresses.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StealthPayment {
+    pub address: String,
+    /// The gateway record's ephemeral public key (needed to spend).
+    pub ephemeral: String,
+    pub balance: Amount,
+    /// Unix seconds the address was handed out.
+    pub created_at: i64,
+    /// Moving it to the private balance is possible and worth it (pool minimum, gas).
+    pub can_sweep: bool,
+}
+
+/// Label rules of `LowkiRegistrar`: 3-32 of `a-z0-9-`, no leading/trailing `-`, no `--` at
+/// positions 3-4. Returns the sentence to show, or `None` if the label is fine.
+pub fn label_problem(label: &str) -> Option<&'static str> {
+    let b = label.as_bytes();
+    if b.len() < 3 {
+        return Some("Use at least 3 characters.");
+    }
+    if b.len() > 32 {
+        return Some("Use at most 32 characters.");
+    }
+    if !b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-') {
+        return Some("Use lowercase letters, digits and hyphens only.");
+    }
+    if b[0] == b'-' || b[b.len() - 1] == b'-' {
+        return Some("A name can't start or end with a hyphen.");
+    }
+    if b.len() >= 4 && b[2] == b'-' && b[3] == b'-' {
+        return Some("A name can't have hyphens in the 3rd and 4th place.");
+    }
+    None
+}
+
+#[cfg(test)]
+mod home_tests {
+    use super::label_problem;
+
+    #[test]
+    fn label_rules_match_the_registrar() {
+        for ok in ["abc", "test-1a2b", "a1-b", "x".repeat(32).as_str(), "123"] {
+            assert_eq!(label_problem(ok), None, "{ok}");
+        }
+        for bad in ["ab", "-abc", "abc-", "ab--c", "ABC", "a_b", "a.b", "émile", &"x".repeat(33)] {
+            assert!(label_problem(bad).is_some(), "{bad}");
+        }
+    }
+}

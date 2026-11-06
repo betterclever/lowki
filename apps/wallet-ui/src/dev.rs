@@ -61,6 +61,10 @@ pub struct Flags {
     /// The mock backend runs (`backend=mock`, or a `screen=` deep link).
     pub mock: bool,
     pub google: bool,
+    /// Wallet home: opened top level with no app (`home=1` forces it, `home=0` disables it).
+    pub home: bool,
+    /// `name=<label>`: the mock home starts with that name claimed.
+    pub name: Option<String>,
 }
 
 pub fn flags() -> Flags {
@@ -77,6 +81,19 @@ pub fn flags() -> Flags {
     });
     if let Some(n) = get("app_name") {
         app.name = n;
+    }
+    let home = match get("home").as_deref() {
+        Some(v) => v != "0" && v != "false",
+        // Deep links (`screen=`) keep the in-app screens unless `home=1`.
+        None => get("app").is_none()
+            && get("origin").is_none()
+            && get("screen").is_none()
+            && !on("embed")
+            && top_level_without_opener(),
+    };
+    if home {
+        let own = web_sys::window().and_then(|w| w.location().origin().ok()).unwrap_or_default();
+        app = AppInfo { id: String::new(), name: "Lowki".into(), origin: own, hue: 90 };
     }
     let origin = get("origin").unwrap_or_else(|| "*".into());
     if origin != "*" {
@@ -96,6 +113,8 @@ pub fn flags() -> Flags {
         origin,
         mock,
         google,
+        home,
+        name: get("name"),
         screen: get("screen"),
         fail: get("fail").and_then(|f| FailMode::parse(&f)),
         speed: get("speed").and_then(|s| s.parse().ok()).unwrap_or(1.0),
@@ -109,12 +128,24 @@ pub fn flags() -> Flags {
     }
 }
 
+/// Not inside a frame, and not a popup some app opened.
+fn top_level_without_opener() -> bool {
+    let Some(w) = web_sys::window() else { return false };
+    let top_is_self = match w.top() {
+        Ok(Some(t)) => js_sys::Object::is(&t, &w),
+        _ => false,
+    };
+    let opener = w.opener().map(|o| !o.is_null() && !o.is_undefined()).unwrap_or(false);
+    top_is_self && !opener
+}
+
 /// Install the mock and apply backend-side flags.
 pub fn init(m: Rc<MockBackend>, f: &Flags) {
     m.set_fail(f.fail);
     m.set_speed(f.speed);
     m.set_empty(f.empty);
     m.set_returning(f.returning);
+    m.set_name(f.name.as_deref());
     MOCK.with(|cell| *cell.borrow_mut() = Some(m));
 }
 

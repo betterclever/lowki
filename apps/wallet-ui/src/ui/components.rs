@@ -48,12 +48,12 @@ pub fn Sheet(
                         view! { <Lockup /> }.into_any()
                     }}
                 </div>
-                {(!bare).then(|| view! {
+                {if !bare && !c.home.get_untracked() { view! {
                     <div class="bar-app" title=move || app.with(|a| a.origin.clone())>
-                        <AppTile app=app.get_untracked() small=true />
+                        {move || view! { <AppTile app=app.get() small=true /> }}
                         <span class="bar-app-name">{move || app.with(|a| a.name.clone())}</span>
                     </div>
-                })}
+                }.into_any() } else { view! { <span class="bar-mid"></span> }.into_any() }}
                 <div class="bar-right">
                     {match action {
                         TopAction::Settings => view! {

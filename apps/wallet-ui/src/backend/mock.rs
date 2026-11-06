@@ -83,6 +83,8 @@ struct State {
     delegations: Vec<Delegation>,
     seen_apps: Vec<String>,
     nonce: u64,
+    /// Wallet home: the claimed name's label, if any.
+    name: Option<String>,
 }
 
 pub struct MockBackend {
@@ -169,6 +171,7 @@ impl MockBackend {
                 delegations: vec![],
                 seen_apps: vec![],
                 nonce: 0,
+                name: None,
             }),
             fail: Cell::new(None),
             speed: Cell::new(1.0),
@@ -796,6 +799,118 @@ impl WalletBackend for MockBackend {
                 })
                 .collect())
         })
+    }
+
+    fn home_apps(&self) -> BoxFut<'_, Res<Vec<HomeApp>>> {
+        Box::pin(async move {
+            self.wait(400).await;
+            self.check(&[FailMode::Network])?;
+            if self.st.borrow().empty {
+                return Ok(vec![]);
+            }
+            let bal = [41_200_000_000_000_000u128, 3_500_000_000_000_000, 0];
+            Ok(known_apps()
+                .into_iter()
+                .zip(bal)
+                .map(|(app, b)| HomeApp {
+                    address: fake_address(&[USER_SEED, "account", &app.id]),
+                    app,
+                    balance: Some(Amount::new(Token::Eth, b)),
+                })
+                .collect())
+        })
+    }
+
+    fn app_suggestions(&self) -> BoxFut<'_, Vec<Suggestion>> {
+        Box::pin(async move {
+            vec![Suggestion {
+                name: "Lowki Tips".into(),
+                url: "https://tips.lowki.money".into(),
+                blurb: Some("Tip creators by name, privately.".into()),
+            }]
+        })
+    }
+
+    fn private_balance(&self) -> BoxFut<'_, Option<Amount>> {
+        Box::pin(async move {
+            self.wait(300).await;
+            let st = self.st.borrow();
+            Some(if st.empty { Amount::zero(Token::Usdc) } else { st.private.first().copied().unwrap_or(Amount::zero(Token::Usdc)) })
+        })
+    }
+
+    fn name_status(&self) -> BoxFut<'_, Res<NameStatus>> {
+        Box::pin(async move {
+            self.wait(200).await;
+            let label = self.st.borrow().name.clone();
+            Ok(NameStatus {
+                enabled: true,
+                parent: "lowki.eth".into(),
+                ready: label.is_some(),
+                name: label.map(|l| format!("{l}.lowki.eth")),
+                register_tx: None,
+                setup_tx: None,
+            })
+        })
+    }
+
+    fn claim_name(&self, label: &str, progress: Rc<dyn Fn(ClaimStage)>) -> BoxFut<'_, Res<NameStatus>> {
+        let label = label.to_string();
+        Box::pin(async move {
+            if let Some(p) = label_problem(&label) {
+                return Err(WalletError::Other(p.into()));
+            }
+            progress(ClaimStage::Signing);
+            self.wait(500).await;
+            progress(ClaimStage::Registering);
+            self.wait(1800).await;
+            self.check(&[FailMode::Network])?;
+            progress(ClaimStage::SettingUp);
+            self.wait(1800).await;
+            self.st.borrow_mut().name = Some(label);
+            self.name_status().await
+        })
+    }
+
+    fn name_payments(&self, name: &str) -> BoxFut<'_, Res<Vec<StealthPayment>>> {
+        let name = name.to_string();
+        Box::pin(async move {
+            self.wait(700).await;
+            Ok(vec![
+                StealthPayment {
+                    address: fake_address(&[&name, "pay", "1"]),
+                    ephemeral: format!("0x02{}", fake_hex(&[&name, "eph", "1"], 64)),
+                    balance: Amount::new(Token::Eth, 20_000_000_000_000_000),
+                    created_at: 1_793_900_000,
+                    can_sweep: true,
+                },
+                StealthPayment {
+                    address: fake_address(&[&name, "pay", "2"]),
+                    ephemeral: format!("0x03{}", fake_hex(&[&name, "eph", "2"], 64)),
+                    balance: Amount::new(Token::Eth, 100_000_000_000_000),
+                    created_at: 1_793_990_000,
+                    can_sweep: false,
+                },
+            ])
+        })
+    }
+
+    fn sweep_payment(&self, _p: &StealthPayment, progress: ProgressFn) -> BoxFut<'_, Res<SendReceipt>> {
+        Box::pin(async move {
+            for stage in ProofStage::all() {
+                progress(ProofProgress { stage, fraction: 0.0 });
+                self.wait(700).await;
+                progress(ProofProgress { stage, fraction: 1.0 });
+            }
+            Ok(SendReceipt { hash: format!("0x{}", fake_hex(&["sweep"], 64)), private: true })
+        })
+    }
+}
+
+impl MockBackend {
+    /// Deep links: the home with a claimed name.
+    pub fn set_name(&self, label: Option<&str>) {
+        self.st.borrow_mut().name = label.map(str::to_string);
     }
 }
 

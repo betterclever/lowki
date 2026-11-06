@@ -77,6 +77,8 @@ Build-time settings (never URL flags, since the embedding app controls the URL):
 | `origin=` | The parent origin to accept messages from and reply to |
 | `embed=1` | Transparent backdrop, for iframes |
 | `backend=` | `real` (default) or `mock`. `screen=` deep links imply `mock` |
+| `home=` | `1` forces the wallet home, `0` disables it (default: top level without `app=`) |
+| `name=` | The mock home starts with this label claimed |
 | `google=` | `1` shows "Continue with Google" with the real backend (it has no Google yet); `0` hides it with the mock |
 | `app_name=` | Name shown for the embedding app (with the real backend, `app=` is the lowki-server app ID) |
 
@@ -94,9 +96,53 @@ Build-time settings (never URL flags, since the embedding app controls the URL):
 | 7 | Confirmation sheets: message; typed data (EIP-712 decoded by the declared field order, with token amounts and dates); transaction (to, action, amount, fee or "Covered by *App*", plus call data in a collapsible block) | `screens/confirm.rs`, `format.rs` |
 | 8 | Delegation consent: Can / Can't sentences generated from the policy, expiry, "Nothing is posted" on chain, verified signer and build hash, enclave measurement | `screens/delegation.rs`, `format.rs` |
 | 9 | Settings: sign-in methods (link/unlink), apps that can act for you with Revoke access (confirmed inline), 2-of-3 recovery status, and "your apps", which only the user sees | `screens/settings.rs` |
+| 11 | **Wallet home** (the Lowki origin opened top level, no app): "Open your wallet" sign-in; private balance with Move in / Move out through a chosen app account; "Your name" (claim `yourname.lowki.eth`, three live steps, then payments found at its stealth addresses with "Move to private" or "Found"); "Your apps" with each app's address and balance; demo apps to try | `screens/wallet_home.rs`, `backend/real/home.rs` |
 | 10 | Errors: passkey cancelled, PRF unsupported (copy a link for another browser, or fall back to Google + recovery code), network, policy rejected | `screens/errors.rs` |
 
 Screenshots of every screen, in light and dark at 390 and 1280 px, are in `docs/ui-screens/`. Open `docs/ui-screens/index.html` for the contact sheet.
+
+## Wallet home
+
+When the wallet page is **top level** (not in a frame, no `window.opener`) and has no `app=` /
+`origin=` / `screen=` flag, it is the wallet home (`home=1` / `home=0` force it either way). In
+home mode nothing is posted to any app, no app token is issued, and the sheet shows no app chip.
+
+- **Your apps.** `RealBackend::session` adds every app it issues a token for to the user's app
+  list, which the key worker encrypts (`appListSeal`, key `HKDF(seed, "lowki/app-list/key/v1")`)
+  and lowki-server stores as an opaque blob (`PUT /v1/me/app-list`, versioned; a conflict is
+  re-read and merged). The home opens it (`appListOpen`), derives each address with
+  `appAccount(origin)` and reads balances over the routed provider (Anon-RPC). `demoApps` in
+  `lowki-config.json` (`[{name, url, blurb?}]`) are offered as "Try an app".
+- **Your name.** `ensIdentity` -> `POST /v1/names/prepare` -> `ensSignRegistration` +
+  `ensSignOwnerSetup` -> `POST /v1/names/register` -> `POST /v1/names/setup`. Label rules are
+  `LowkiRegistrar`'s and are checked as you type (`backend::label_problem`), in the worker and
+  on the server.
+- **Payments to the name.** `ensRecordsAuth` (viewing key) -> `GET /v1/ens/records` ->
+  `stealthScan` in the worker -> non-zero balances. A payment that clears the pool minimum
+  (0.001 ETH) after gas, with the private pool configured, gets **Move to private**: a pool
+  deposit straight from the stealth address (`prepareShield`, signed by `stealthSignTransaction`;
+  the stealth key never leaves the worker), then the ASP. Anything smaller shows **Found**.
+- **App names.** In an app, the wallet replaces the app ID / `app_name` flag with the server's
+  registered name (`GET /v1/apps/{id}`); the origin under it is the browser's.
+
+Run it against live Sepolia (names, gateway) on the macOS host:
+
+```sh
+apps/wallet-ui/scripts/home-server.sh        # lowki-server :8830 (behind the on-chain tunnel), dev mode, live ENS
+trunk build --release                        # dist/
+mac sh -lc 'cd <lowki>/apps/wallet-ui && SHOTS=1 node tests/e2e/home.mjs'
+node apps/wallet-ui/scripts/claim-live.mjs test-<x>   # the claim path without a browser (Node worker)
+```
+
+Live run (2026-11-07, `tests/e2e/home.mjs`, all 8 steps pass, log in `target/wallet-home/home-e2e.log`):
+sign-up in Game X (:8832), Pixel Market (:8833) shown by its registered name, the home lists both
+with the same addresses, `test-a3e2f6.lowki.eth` claimed (register
+`0xdd95de2954531bd55ba6f1b9193e414f31c9df8702d4585421a098d1b0ec6ffa`, owner batch
+`0xcb22a54846366d789e32056f54f264af0f997df16179075ce4bf847fdc3811df`), three plain-viem
+lookups gave three addresses, 0.0001 ETH sent
+(`0x1cc1bca747ef4ddf90718af2516ffab364329650951291f6bd84189f335238b5`) and the home found it at
+`0x55fc360657629D1249454D64961BEcc9F1F8cCF3` (below the pool minimum: "Found"). Reads went over
+Anon-RPC (Nox). Screens: `docs/ui-screens/27-…` to `37-…`.
 
 ## Backend traits
 
@@ -218,7 +264,8 @@ The tests live in `tests/e2e/`. They are Node with no npm dependencies of their 
   - send privately with staged progress;
   - approve a delegation, asserting the policy sentences and attestation;
   - revoke it in Settings, asserting the dapp gets `delegation_revoked`.
-- `node tests/e2e/screens.mjs` takes every screenshot and writes the contact sheet.
+- `node tests/e2e/screens.mjs` takes every screenshot and writes the contact sheet (wallet home: `27`-`35` with the mock, plus the live `36`/`37` from `home.mjs SHOTS=1`).
+- `node tests/e2e/home.mjs` is the wallet home on **live Sepolia** (see "Wallet home"); `DRY=1` stops before the claim.
 - Both run with `backend=mock`.
 - `node tests/e2e/real.mjs` is the **real backend** end to end, with a CDP virtual authenticator (ctap2.1, UV, PRF). Start lowki-server first with `tests/e2e/real-server.sh` (VM or host; fresh database, wallet origin `http://localhost:8740`, dapps `:8741`/`:8742`). The script serves `dist/` on `:8740` with a same-origin `/v1/` proxy and the demo dapp on `:8741` and `:8742`, then checks:
   1. sign-up with email (the code is read from `target/wallet-ui-e2e/server.log`) and a passkey; the dapp gets the address, pairwise ID and a JWT that verifies against the server's JWKS (`jose`);

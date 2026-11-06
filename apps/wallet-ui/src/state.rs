@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 use crate::backend::{
-    AppInfo, Amount, DelegationPolicy, RecoveryCode, Session, TxRequest, VaultDirection, WalletError,
+    AppInfo, Amount, DelegationPolicy, RecoveryCode, Session, StealthPayment, TxRequest, VaultDirection, WalletError,
 };
 use crate::platform::Platform;
 use crate::protocol::{self, RejectReason, WalletToDapp};
@@ -23,6 +23,10 @@ pub enum Screen {
     Send,
     Vault(VaultDirection),
     Settings,
+    /// Wallet home: pick the app account a Move in comes from / a Move out goes to.
+    PickAccount(VaultDirection),
+    /// Wallet home: move a payment found at the name's stealth address into the private balance.
+    Sweep(StealthPayment),
     ConfirmMessage { id: String, message: String },
     ConfirmTyped { id: String, data: serde_json::Value },
     ConfirmTx { id: String, tx: TxRequest },
@@ -67,6 +71,9 @@ pub struct Ctx {
     pub new_user: RwSignal<bool>,
     /// The email the user chose to share with this app (never set without that choice).
     pub shared_email: RwSignal<Option<String>>,
+    /// The wallet home: the Lowki origin opened directly (top level, no app). Nothing is
+    /// posted to any app, and Home shows every app instead of one account.
+    pub home: RwSignal<bool>,
 }
 
 impl Ctx {
@@ -88,6 +95,7 @@ impl Ctx {
             show_google: RwSignal::new(true),
             new_user: RwSignal::new(false),
             shared_email: RwSignal::new(None),
+            home: RwSignal::new(false),
         }
     }
 
@@ -139,6 +147,9 @@ impl Ctx {
     }
 
     pub fn post(&self, msg: WalletToDapp) {
+        if self.home.get_untracked() {
+            return; // top level: there is no app to tell
+        }
         protocol::post(&msg, &self.parent_origin.get_untracked());
     }
 

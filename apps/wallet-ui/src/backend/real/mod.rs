@@ -16,6 +16,7 @@
 
 pub mod chain;
 pub mod codec;
+mod home;
 mod js;
 pub mod passkey;
 pub mod private;
@@ -484,7 +485,16 @@ impl AuthBackend for RealBackend {
         let app = app.clone();
         Box::pin(async move {
             let (address, _pairwise) = self.account(&app).await?;
+            if app.id.is_empty() {
+                // The wallet home (top level, no app): nothing is issued and nothing is shared.
+                let label = self.st.borrow().email.clone().unwrap_or_else(|| "Your passkey".into());
+                return Ok(Session { address, user_id: String::new(), access_token: String::new(), account_label: label });
+            }
             let t = self.app_token(&app).await?;
+            // Remember the app in the user's encrypted app list (for the wallet home).
+            if let Err(e) = self.remember_app(&app).await {
+                log(&format!("app list: {}", e.message()));
+            }
             let label = self.st.borrow().email.clone().unwrap_or_else(|| "Your passkey".into());
             Ok(Session {
                 address,
@@ -773,6 +783,45 @@ impl WalletBackend for RealBackend {
 
     fn private_report(&self) -> Vec<(String, String)> {
         self.report.borrow().clone()
+    }
+
+    fn app_info(&self, app_id: &str) -> BoxFut<'_, Option<(String, String)>> {
+        let path = format!("/v1/apps/{}", js_sys::encode_uri_component(app_id));
+        Box::pin(async move {
+            let v = self.server.get(&path).await.ok()?;
+            Some((s(&v, "name")?, s(&v, "origin").unwrap_or_default()))
+        })
+    }
+
+    fn home_apps(&self) -> BoxFut<'_, Res<Vec<HomeApp>>> {
+        Box::pin(self.home_apps_impl())
+    }
+
+    fn app_suggestions(&self) -> BoxFut<'_, Vec<Suggestion>> {
+        Box::pin(self.suggestions_impl())
+    }
+
+    fn private_balance(&self) -> BoxFut<'_, Option<Amount>> {
+        Box::pin(self.private_balance_impl())
+    }
+
+    fn name_status(&self) -> BoxFut<'_, Res<NameStatus>> {
+        Box::pin(self.name_status_impl())
+    }
+
+    fn claim_name(&self, label: &str, progress: Rc<dyn Fn(ClaimStage)>) -> BoxFut<'_, Res<NameStatus>> {
+        let label = label.to_string();
+        Box::pin(async move { self.claim_impl(&label, progress).await })
+    }
+
+    fn name_payments(&self, name: &str) -> BoxFut<'_, Res<Vec<StealthPayment>>> {
+        let name = name.to_string();
+        Box::pin(async move { self.payments_impl(&name).await })
+    }
+
+    fn sweep_payment(&self, p: &StealthPayment, progress: ProgressFn) -> BoxFut<'_, Res<SendReceipt>> {
+        let p = p.clone();
+        Box::pin(async move { self.sweep_impl(&p, progress).await })
     }
 }
 

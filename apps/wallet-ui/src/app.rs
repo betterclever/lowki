@@ -12,6 +12,7 @@ use crate::screens::confirm::{ConfirmMessage, ConfirmPrivate, ConfirmTx, Confirm
 use crate::screens::delegation::DelegationConsent;
 use crate::screens::errors::ErrorScreen;
 use crate::screens::home::Home;
+use crate::screens::wallet_home::{PickAccount, SweepScreen, WalletHome};
 use crate::screens::onboarding::{EmailCode, RecoverCode, Recovery, SecureWallet, SignIn, Unlock};
 use crate::screens::send::{Send, VaultMoveScreen};
 use crate::screens::settings::Settings;
@@ -207,7 +208,20 @@ fn focus_heading() {
 pub fn App(flags: Flags) -> impl IntoView {
     let c = Ctx::new(flags.app.clone(), flags.platform.unwrap_or_else(Platform::detect), flags.origin.clone());
     c.show_google.set(flags.google);
+    c.home.set(flags.home);
     provide_context(c);
+    // Show the app's registered name (lowki-server), not its ID or a name the page chose.
+    // The origin under it is the browser's, so a look-alike name still shows its real origin.
+    if !flags.home && !flags.mock && !flags.app.id.is_empty() {
+        let id = flags.app.id.clone();
+        leptos::task::spawn_local(async move {
+            if let Some((name, _registered_origin)) = backend().app_info(&id).await
+                && !name.is_empty()
+            {
+                c.app.update(|a| a.name = name);
+            }
+        });
+    }
     dev::apply_initial(c, &flags);
 
     WALLET_CHAIN.with(|w| w.set((!flags.mock).then(real_chain_id)));
@@ -238,7 +252,10 @@ pub fn App(flags: Flags) -> impl IntoView {
                     Screen::SecureWallet => view! { <SecureWallet /> }.into_any(),
                     Screen::Recovery => view! { <Recovery /> }.into_any(),
                     Screen::RecoverCode => view! { <RecoverCode /> }.into_any(),
+                    Screen::Home if c.home.get_untracked() => view! { <WalletHome /> }.into_any(),
                     Screen::Home => view! { <Home /> }.into_any(),
+                    Screen::PickAccount(d) => view! { <PickAccount direction=d /> }.into_any(),
+                    Screen::Sweep(p) => view! { <SweepScreen payment=p /> }.into_any(),
                     Screen::Send => view! { <Send /> }.into_any(),
                     Screen::Vault(d) => view! { <VaultMoveScreen direction=d /> }.into_any(),
                     Screen::Settings => view! { <Settings /> }.into_any(),
