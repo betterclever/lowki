@@ -1,0 +1,15 @@
+{
+  "name": "lowki-keys-vectors",
+  "private": true,
+  "type": "module",
+  "scripts": { "gen": "tsx gen.ts" },
+  "dependencies": {
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "2.2.0",
+    "@scure/bip32": "2.2.0",
+    "@scure/bip39": "2.2.0",
+    "ox": "0.12.0",
+    "viem": "2.38.0",
+    "tsx": "4.20.6"
+  }
+}
