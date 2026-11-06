@@ -6,3 +6,4 @@ export * from "./storage";
 export * from "./network";
 export * from "./provider";
 export * from "./host";
+export * from "./anon-provider";

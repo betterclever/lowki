@@ -29,6 +29,7 @@
       "@kohaku-eth/plugins/broadcaster": ["../../../vendor/kohaku/packages/plugins/src/broadcaster/base.ts"],
       "@kohaku-eth/provider": ["../../../vendor/kohaku/packages/provider/src/index.ts"],
       "@kohaku-eth/provider/viem": ["../../../vendor/kohaku/packages/provider/src/viem/index.ts"],
+      "@kohaku-eth/provider/raw": ["../../../vendor/kohaku/packages/provider/src/raw/index.ts"],
       "@kohaku-eth/poseidon": ["../../../vendor/kohaku/packages/poseidon/src/index.ts"],
       "@kohaku-eth/poseidon-lean-imt": ["../../../vendor/kohaku/packages/poseidon-lean-imt/src/index.ts"],
       "@kohaku-eth/privacy-pools/src/*": ["../../../vendor/kohaku/packages/privacy-pools/src/*"],
@@ -37,5 +38,5 @@
       "*": ["./node_modules/*", "./node_modules/@types/*"]
     }
   },
-  "include": ["src", "test", "scripts"]
+  "include": ["src", "test", "scripts", "browser-anon/*.ts"]
 }

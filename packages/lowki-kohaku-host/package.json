@@ -12,12 +12,13 @@
     "sepolia-sync": "node --import ./resolve-hook.mjs --import tsx scripts/sepolia-sync.ts"
   },
   "dependencies": {
+    "@anon-rpc/browser-harness": "0.4.0",
     "@fatsolutions/privacy-pools-core-circuits": "1.0.5",
     "@noble/hashes": "2.2.0",
-    "@scure/bip32": "2.2.0",
-    "@scure/bip39": "2.2.0",
     "@reduxjs/toolkit": "2.12.0",
     "@saga-sync/client": "0.3.0",
+    "@scure/bip32": "2.2.0",
+    "@scure/bip39": "2.2.0",
     "ethers": "6.17.0",
     "maci-crypto": "2.5.0",
     "ox": "0.12.4",
