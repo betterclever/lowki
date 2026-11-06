@@ -1,0 +1,23 @@
+{
+  "_source": "ENSv2 on Sepolia, from https://docs.ens.domains/learn/deployments section 'Sepolia (ENSv2)' (fetched 2026-11-06), cross-checked with ensdomains/ensjs@495ffc731a5f37b2e2c5504ac8959e75dae1da10 packages/ensjs/src/clients/chain.ts (sepolia block) and with fluidkey/stealth-ens-resolver test/fork/SepoliaENSv2.fork.t.sol. This is the redeploy of 2026-10-01 (ensdomains/namechain tag v2-mainnet-deployment-1, commit 62778d8). Addresses change between ENS redeploys: re-check this file against the docs before every live run. This is the ONLY place ENS addresses live; scripts, the gateway (via env) and the e2e read them from here. The batch gateway provider is not listed in the docs: scripts read it on-chain from UniversalResolverV2.BATCH_GATEWAY_PROVIDER().",
+  "chainId": 11155111,
+  "ens": {
+    "UniversalResolver": "0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe",
+    "UniversalResolverV2": "0x24E1D8e068620B647CA097f961A61055f4f42D72",
+    "RootRegistry": "0xB458D6a3a77919449d03e7A6903C26827c1eC43f",
+    "ETHRegistry": "0xD4eBcbBdF463C9c45784603Db0dDD499BC44A8B4",
+    "ETHRegistrar": "0xf633e7FC17e2bbE0D0965D18ec1821dcB754a3d3",
+    "VerifiableFactory": "0xDa70306C98E97eCe36F997a21368e53298572991",
+    "UserRegistryImpl": "0x9BD8a88719068D09ecee662f36C0E3856708366a",
+    "PermissionedResolverImpl": "0x115eb53F0c60696633855F90b138178Fb40b2b2C",
+    "StandardRentPriceOracle": "0x8196665D4ca7488B6474a9EC8E7d2719FB42263A",
+    "LabelStore": "0xed8246ff02203a4d4cb262bd78beaa7408a57cae",
+    "MockUSDC": "0x240b0316Df57887DBBE58b586508b19e633a14aa"
+  },
+  "stealth": {
+    "_source": "EIP-5564 / EIP-6538 'Deployment Method' (CREATE2, same address on every chain); also lowki-stealth README.",
+    "ERC5564Announcer": "0x55649E01B5Df198D18D95b5cc5051630cfD45564",
+    "ERC6538Registry": "0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538"
+  },
+  "create2Deployer": "0x4e59b44847b379578588920cA78FbF26c0B4956C"
+}
