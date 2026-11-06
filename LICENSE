@@ -1,0 +1,21 @@
+Lowki is free and open-source software, licensed under either of
+
+  * the Apache License, Version 2.0 (LICENSE-APACHE or
+    https://www.apache.org/licenses/LICENSE-2.0), or
+  * the MIT License (LICENSE-MIT or https://opensource.org/licenses/MIT),
+
+at your option. SPDX-License-Identifier: MIT OR Apache-2.0
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this repository by you, as defined in the Apache-2.0 license,
+shall be dual licensed as above, without any additional terms or conditions.
+
+Exceptions, as declared in their own manifests or file headers:
+
+  * crates/lowki-aa, crates/lowki-pp-core, packages/lowki-react-auth and the
+    Solidity sources under contracts/ are MIT only (a subset of the above).
+  * The fonts in apps/wallet-ui/assets/fonts/ are under the SIL Open Font
+    License 1.1; their licence texts sit next to them.
+  * Third-party code fetched at build or test time (Kohaku, Fluidkey's
+    StealthResolver, ENS contracts, circuit artifacts, npm and crates.io
+    dependencies) keeps its own licence and is not redistributed here.
