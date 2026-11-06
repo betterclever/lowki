@@ -3,6 +3,7 @@
 //! The server never sees keys. It stores credential public keys, HMAC'd identity subjects,
 //! opaque passkey-wrapped blobs and one Shamir share that is useless on its own.
 
+pub mod app_list;
 pub mod apps;
 pub mod audit;
 pub mod config;
@@ -10,6 +11,7 @@ pub mod crypto;
 pub mod db;
 pub mod email;
 pub mod ens_gateway;
+pub mod ens_names;
 pub mod error;
 pub mod oidc;
 pub mod passkey;
@@ -64,6 +66,8 @@ pub struct Inner {
     pub http: reqwest::Client,
     /// ENSIP-30 stealth gateway (`LOWKI_ENS_GATEWAY=true`).
     pub ens: Option<ens_gateway::Gateway>,
+    /// Sponsored name claims (`LOWKI_ENS_OPERATOR_KEY`).
+    pub names: Option<ens_names::Names>,
 }
 
 pub type AppState = Arc<Inner>;
@@ -139,6 +143,10 @@ pub async fn build_state(config: Config, otp_sender: Option<Arc<dyn OtpSender>>)
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
     let ens = config.ens_gateway.clone().map(ens_gateway::Gateway::new);
+    let names = config.ens_names.clone().map(ens_names::Names::new);
+    if names.is_some() && ens.is_none() {
+        anyhow::bail!("LOWKI_ENS_OPERATOR_KEY needs the ENS gateway (LOWKI_ENS_GATEWAY=true)");
+    }
     let state = Arc::new(Inner {
         config,
         db,
@@ -151,6 +159,7 @@ pub async fn build_state(config: Config, otp_sender: Option<Arc<dyn OtpSender>>)
         app_origins: RwLock::new(HashSet::new()),
         http,
         ens,
+        names,
     });
     apps::refresh_origin_cache(&state)
         .await
@@ -185,6 +194,11 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/me/share", get(share::share_status).put(share::put_share))
         .route("/v1/me/share/release", post(share::release_share))
         .route("/v1/me/share/recovery", delete(share::cancel_recovery))
+        .route("/v1/me/app-list", get(app_list::get_app_list).put(app_list::put_app_list))
+        .route("/v1/names/me", get(ens_names::me))
+        .route("/v1/names/prepare", post(ens_names::prepare))
+        .route("/v1/names/register", post(ens_names::register))
+        .route("/v1/names/setup", post(ens_names::setup))
         .layer(middleware::from_fn_with_state(state.clone(), session::origin_guard));
 
     let lowki_origins: Vec<String> = state.config.lowki_origins.iter().map(config::origin_of).collect();
@@ -206,6 +220,7 @@ pub fn router(state: AppState) -> Router {
     let public = Router::new()
         .route("/.well-known/jwks.json", get(tokens::jwks))
         .route("/.well-known/openid-configuration", get(tokens::openid_configuration))
+        .route("/v1/apps/{app_id}", get(app_list::public_app))
         .layer(CorsLayer::new().allow_origin(Any).allow_methods([Method::GET]));
 
     let admin = Router::new()

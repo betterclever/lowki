@@ -284,6 +284,9 @@ pub async fn issue_token(
             "expires_in": state.config.access_token_ttl.as_secs(),
             "user_id": sub,
             "app_id": app_id,
+            // The registered display name and origin, for the wallet's sheets.
+            "app_name": app.name,
+            "app_origin": app_origin,
         })),
         vec![],
     ))

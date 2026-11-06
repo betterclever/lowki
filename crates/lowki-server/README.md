@@ -417,6 +417,60 @@ re-checked with lowki-ens' verifier, a new address per lookup, records stored, r
 auth by viewing key, rate limits). The full flow against real contracts is
 `contracts/e2e/run.sh`.
 
+## Wallet home: app list and sponsored names
+
+### Encrypted app list (`src/app_list.rs`)
+
+The wallet home lists every app the user has used without the server learning the list. Each
+time the wallet issues an app token it adds that app (origin, app ID, name) to a JSON list,
+encrypts it in lowki-worker under a key derived from the seed (`lowki/app-list/key/v1`), and
+stores the ciphertext here.
+
+| Method and path | Auth | Purpose |
+|---|---|---|
+| `GET /v1/me/app-list` | session | `{blob: base64url \| null, version}` |
+| `PUT /v1/me/app-list` | session, CSRF | `{blob, version}` (the version read; 0 = none). `409 version_conflict` if it changed (two app frames at once): re-read, merge, retry. At most 33 KiB; 240 writes per user per hour. |
+| `GET /v1/apps/{app_id}` | none (public, CORS `*`) | `{id, name, origin}`: the registered display name, so the wallet shows "Lowki Tips" rather than an app ID or a name the page chose. The token response also carries `app_name` and `app_origin`. |
+
+### Sponsored `<label>.<parent>` names (`src/ens_names.rs`)
+
+One name per user, claimed from the wallet home. The owner is the wallet's identity key
+(`m/137'/0'/0'`), which never holds ETH: it signs, the operator pays (about 0.75M gas to register
+and 3.3M for the owner batch on Sepolia).
+
+| Method and path | Auth | Purpose |
+|---|---|---|
+| `GET /v1/names/me` | session | `{name: null, parent, enabled}` or `{label, name, owner, status, register_tx, setup_tx, enabled}`; status `registering` \| `registered` \| `ready` \| `failed` |
+| `POST /v1/names/prepare` | session, CSRF | `{label, owner}`: label rules (`LowkiRegistrar`'s), one name per user, `available()` on chain; returns every public value the worker signs over (addresses, `nonces(owner)`, the owner's account nonce, `LowkiOwnerAccount.nonce()`, `predictProxyAddress(owner, node)`, duration, a 30-minute deadline) |
+| `POST /v1/names/register` | session, CSRF | `{label, owner, nonce, deadline, signature}`: rebuilds `Register`, checks the signature recovers to `owner`, reserves the label for the user, sends `LowkiRegistrar.register` (type 2) with the operator key, waits for the receipt |
+| `POST /v1/names/setup` | session, CSRF | `{record, exec_nonce, deadline, execute_signature, authorization}`: **rebuilds the five owner-batch calls itself** (own PermissionedResolver with the legacy text record, `setConfig` with the configured gateway URL, `setChains([60])`, `setMetaAddress(record)`, `setResolver`), checks `Execute` and the 7702 authorisation recover to the owner (delegate = `LowkiOwnerAccount`, this chain), and sends one type-4 transaction to the owner |
+
+Rate limits: 12 claim calls per user and `LOWKI_ENS_CLAIMS_PER_HOUR_IP` (10) per IP per hour.
+Operator transactions are serialised (one nonce sequence); gas estimates are padded 30 %, as in
+`contracts/e2e`. A client can't make the operator relay anything but this registration and this
+batch for its own name: the server never relays caller-supplied calldata.
+
+What the operator learns: which user claimed which (public) name and owner address, because it
+sponsors both. Payments to the name are seen only by the gateway operator (see above).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `LOWKI_ENS_OPERATOR_KEY` | unset, so claims are off | Hex private key that holds the registrar's operator role and pays gas. Parsed once; never logged or printed by `Debug`. Needs `LOWKI_ENS_GATEWAY=true` (its RPC, parent and `LOWKI_ENS_STEALTH_RESOLVER`). |
+| `LOWKI_ENS_REGISTRAR`, `LOWKI_ENS_REGISTRY`, `LOWKI_ENS_OWNER_ACCOUNT` | **required** with the key | From `contracts/deployments/sepolia-lowki.json` |
+| `LOWKI_ENS_VERIFIABLE_FACTORY`, `LOWKI_ENS_PERMISSIONED_RESOLVER_IMPL` | **required** with the key | From `contracts/deployments/sepolia-ensv2.json` |
+| `LOWKI_ENS_GATEWAY_URL` | **required** with the key | The gateway URL written on chain (`gatewayUrl` in the deployment file) |
+| `LOWKI_ENS_CHAIN_ID` | `11155111` | |
+| `LOWKI_ENS_NAME_DAYS` | `365` | 28 to 366 |
+| `LOWKI_ENS_CLAIMS_PER_HOUR_IP` | `10` | |
+
+`apps/wallet-ui/scripts/home-server.sh` runs all of this against live Sepolia on :8830.
+
+Tests: `tests/home.rs` (app list: CSRF, versions, size, per user; the public app name; claims
+against a mock JSON-RPC chain that decodes the operator's raw transactions: sender = operator,
+type 2 then type 4, exact calldata; forged registration and a batch signed over other calls
+refused; one name per user; label rules; claims off without the key) and the `ens_names` unit
+tests (key redaction, RLP).
+
 ## Google Cloud setup (operator)
 
 1. In Google Cloud Console, open **APIs & Services → OAuth consent screen**. Choose External, set the app name, and the only scope needed is `openid`. Publish the app; while it's in "Testing", only test users can sign in.

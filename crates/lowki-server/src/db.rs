@@ -9,6 +9,7 @@ pub type Db = AnyPool;
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("../migrations/0001_init.sql")),
     (2, include_str!("../migrations/0002_ens_gateway.sql")),
+    (3, include_str!("../migrations/0003_home.sql")),
 ];
 
 pub fn now() -> i64 {
