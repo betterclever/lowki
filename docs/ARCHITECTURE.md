@@ -56,7 +56,7 @@ Servers (self-hostable, one docker compose)
 
 ### Later sign-ins
 
-- **Every day:** a passkey tap, then the PRF unwraps the seed, then the user signs. No server is involved.
+- **Every day:** a passkey tap; the wallet fetches its encrypted seed blob from lowki-server (not yet cached on the device), the PRF unwraps it, and the user signs. The server stores the blob but can never open it.
 - **New device with a synced passkey:** a single tap.
 - **New device without the passkey:** Google releases S, the user enters the recovery code R, the worker rebuilds the seed, and the user creates a new passkey.
 - **Google account compromised:** the attacker gets only S, and one share opens nothing.
