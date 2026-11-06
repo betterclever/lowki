@@ -4,17 +4,34 @@
 // drives the real endpoints from a page on the server's origin:
 //   register (no session) -> passkey assertion with PRF -> wrap a seed with HKDF(PRF) -> PUT blob
 //   -> logout -> assertion with PRF -> blob returned by login/finish -> unwrap -> GET blob.
+// Then the iframe case: an app page on another origin (localhost:<app_port>, registered as an
+// app) embeds the server origin; a passkey is created and used from inside that iframe
+// (clientDataJSON crossOrigin: true, topOrigin: the app page). The same from an unregistered
+// page (localhost:<other_port>) must be refused.
 //
-// Usage: node webauthn-e2e.mjs [server_url]   (default http://localhost:18080)
+// Usage: node webauthn-e2e.mjs [server_url] [app_port] [other_port]
+//        (default http://localhost:18080 18081 18082)
 // Env:   CHROME=/path/to/chrome   (default: macOS Google Chrome)
 // Needs Node >= 22 (global WebSocket). No npm dependencies.
 
 import { spawn } from 'node:child_process';
+import http from 'node:http';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const SERVER = process.argv[2] || 'http://localhost:18080';
+const APP_PORT = Number(process.argv[3] || 18081);
+const OTHER_PORT = Number(process.argv[4] || 18082);
+
+// App pages that embed the Lowki origin. Same site as the server (localhost), different origin.
+const appPage = () => `<!doctype html><title>app</title>
+<iframe id="lowki" src="${SERVER}/healthz" allow="publickey-credentials-create; publickey-credentials-get"></iframe>`;
+const pages = await Promise.all([APP_PORT, OTHER_PORT].map((port) => new Promise((ok, fail) => {
+  const srv = http.createServer((_, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(appPage()); });
+  srv.on('error', fail);
+  srv.listen(port, 'localhost', () => ok(srv));
+})));
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 const profile = mkdtempSync(join(tmpdir(), 'lowki-e2e-'));
@@ -24,6 +41,7 @@ const chrome = spawn(CHROME, [
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
 function cleanup() {
+  for (const p of pages) p.close();
   try { chrome.kill('SIGKILL'); } catch {}
   try { rmSync(profile, { recursive: true, force: true }); } catch {}
 }
@@ -69,6 +87,11 @@ try {
   const s = (m, p) => send(m, p, sessionId);
 
   await s('Page.enable');
+  await s('Runtime.enable');
+  const contexts = [];
+  listeners.push((m) => {
+    if (m.method === 'Runtime.executionContextCreated' && m.sessionId === sessionId) contexts.push(m.params.context);
+  });
   await s('WebAuthn.enable', { enableUI: false });
   const { authenticatorId } = await s('WebAuthn.addVirtualAuthenticator', {
     options: {
@@ -96,6 +119,36 @@ try {
   console.log(`authenticator holds ${credentials.length} resident credential(s), signCount=${credentials[0]?.signCount}`);
   if (credentials.length !== 1 || !credentials[0].isResidentCredential) throw new Error('expected one resident credential');
   console.log('PASS webauthn e2e (register -> authenticate with PRF -> store/fetch wrapped blob)');
+
+  // ---- registration inside an app's iframe ------------------------------------------------
+  const inIframe = async (port, expectOk) => {
+    const top = `http://localhost:${port}`;
+    const ready = new Promise((r) => listeners.push((m) => m.method === 'Page.loadEventFired' && m.sessionId === sessionId && r()));
+    await s('Page.navigate', { url: `${top}/` });
+    await ready;
+    const { frameTree } = await s('Page.getFrameTree');
+    const frame = (frameTree.childFrames || []).find((c) => c.frame.url.startsWith(SERVER));
+    if (!frame) throw new Error('Lowki iframe not found');
+    let ctx;
+    for (let i = 0; i < 50 && !ctx; i++) {
+      ctx = contexts.find((c) => c.auxData?.frameId === frame.frame.id && c.auxData?.isDefault);
+      if (!ctx) await new Promise((r) => setTimeout(r, 100));
+    }
+    if (!ctx) throw new Error('no execution context for the iframe');
+    const r = await s('Runtime.evaluate', {
+      expression: `(${iframeFlow.toString()})(${JSON.stringify(top)}, ${expectOk})`,
+      contextId: ctx.id, awaitPromise: true, returnByValue: true, userGesture: true,
+    });
+    if (r.exceptionDetails) {
+      throw new Error(r.exceptionDetails.exception?.description || JSON.stringify(r.exceptionDetails));
+    }
+    for (const step of r.result.value.steps) console.log(`  ok  ${step}`);
+  };
+  await inIframe(APP_PORT, true);
+  await inIframe(OTHER_PORT, false);
+  const after = await s('WebAuthn.getCredentials', { authenticatorId });
+  console.log(`authenticator now holds ${after.credentials.length} resident credential(s)`);
+  console.log('PASS iframe registration (registered app accepted, unregistered top origin refused)');
 } catch (e) {
   failed = true;
   console.error(`FAIL ${e.message}`);
@@ -221,5 +274,51 @@ async function pageFlow() {
   } catch (e) { excluded = e.name === 'InvalidStateError'; }
   assert(excluded, 'authenticator refuses a duplicate registration');
   steps.push('link flow: CSRF enforced; excludeCredentials prevents duplicate passkey');
+  return { steps };
+}
+
+// ---- runs inside the Lowki iframe on an app page ------------------------------------------------
+async function iframeFlow(top, expectOk) {
+  const steps = [];
+  const assert = (c, m) => { if (!c) throw new Error(`assertion failed: ${m}`); };
+  const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+  const dropNulls = (o) => JSON.parse(JSON.stringify(o, (_, v) => (v === null ? undefined : v)));
+  const call = async (method, path, body) => {
+    const r = await fetch(path, { method, credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body) });
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+  assert(window.top !== window && location.origin !== top, 'running in a cross-origin iframe');
+  await call('POST', '/v1/session/logout', {});
+  const rs = await call('POST', '/v1/passkeys/register/start', { name: 'Lowki iframe e2e' });
+  assert(rs.status === 200, `register/start ${rs.status}`);
+  const pk = dropNulls(rs.body.options.publicKey);
+  const created = await navigator.credentials.create({ publicKey: {
+    ...pk, challenge: unb64u(pk.challenge), user: { ...pk.user, id: unb64u(pk.user.id) },
+    excludeCredentials: (pk.excludeCredentials || []).map((c) => ({ ...c, id: unb64u(c.id) })),
+  } });
+  const cd = JSON.parse(new TextDecoder().decode(created.response.clientDataJSON));
+  assert(cd.crossOrigin === true && cd.topOrigin === top, `browser marked the ceremony cross-origin under ${top}: ${JSON.stringify(cd)}`);
+  const cred = created.toJSON();
+  if (cred.clientExtensionResults?.prf) delete cred.clientExtensionResults.prf.results;
+  const fin = await call('POST', '/v1/passkeys/register/finish', { flow_id: rs.body.flow_id, credential: cred });
+  if (!expectOk) {
+    assert(fin.status === 403 && fin.body?.error === 'top_origin_not_registered',
+      `unregistered top origin refused: ${fin.status} ${JSON.stringify(fin.body)}`);
+    steps.push(`iframe under ${top} (not an app): crossOrigin=true -> 403 top_origin_not_registered`);
+    return { steps };
+  }
+  assert(fin.status === 200 && fin.body.new_user === true, `register/finish ${fin.status} ${JSON.stringify(fin.body)}`);
+  steps.push(`iframe under ${top} (registered app): crossOrigin=true, topOrigin ok -> passkey registered`);
+
+  // The new passkey signs in from the same iframe (a cross-origin, signed assertion).
+  await call('POST', '/v1/session/logout', {});
+  const ls = await call('POST', '/v1/passkeys/login/start', {});
+  const lp = dropNulls(ls.body.options.publicKey);
+  const got = await navigator.credentials.get({ publicKey: { ...lp, challenge: unb64u(lp.challenge),
+    allowCredentials: [{ type: 'public-key', id: unb64u(fin.body.credential_id) }] } });
+  const lf = await call('POST', '/v1/passkeys/login/finish', { flow_id: ls.body.flow_id, credential: got.toJSON() });
+  assert(lf.status === 200 && lf.body.credential_id === fin.body.credential_id, `login/finish ${lf.status} ${JSON.stringify(lf.body)}`);
+  steps.push('the iframe-created passkey signs in from the iframe');
   return { steps };
 }

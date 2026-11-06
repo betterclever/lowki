@@ -60,6 +60,127 @@ fn strip_prf_results(cred: &mut Value) -> bool {
     stripped
 }
 
+// ---- registration inside an app's iframe ---------------------------------------------------
+//
+// The wallet runs in a cross-origin iframe on the app's page, so the browser builds
+// `clientDataJSON` with `crossOrigin: true` and `topOrigin: <the app page's origin>`.
+// webauthn-rs 0.5 rejects every such registration (`CredentialCrossOrigin`; the flag is not
+// configurable) and never looks at `topOrigin`. So the server checks the client data itself and
+// hands webauthn-rs a same-origin copy, only when that copy is equivalent:
+//
+// - Registration is requested with `attestation: "none"`. When the attestation format is
+//   `none`, nothing signs `clientDataJSON` (webauthn-rs uses its hash only to verify an
+//   attestation signature), so the bytes we pass on carry exactly the information the
+//   browser's did, minus the two fields we have checked here. Any other format (a signature
+//   over the client data hash) is refused rather than rewritten.
+// - Before rewriting, this checks `type`, `challenge` (against the stored ceremony), `origin`
+//   (a Lowki origin) and `topOrigin` (a registered app origin). After it, webauthn-rs runs its
+//   full check unchanged: type, challenge, origin, RP ID hash, UP/UV, algorithm, exclusions.
+//
+// Assertions are signed over the client data, are accepted cross-origin by webauthn-rs, and are
+// not touched here.
+
+/// Why a cross-origin registration was refused (logged; the client gets a generic reason).
+#[derive(Debug, PartialEq, Eq)]
+pub enum CrossOriginRefusal {
+    Malformed,
+    WrongType,
+    WrongChallenge,
+    WrongOrigin,
+    MissingTopOrigin,
+    UnregisteredTopOrigin,
+    SignedAttestation,
+}
+
+/// The attestation statement format (`fmt`) of a base64url attestation object.
+fn attestation_fmt(att_obj_b64: &str) -> Option<String> {
+    let bytes = unb64(att_obj_b64)?;
+    let v: serde_cbor_2::Value = serde_cbor_2::from_slice(&bytes).ok()?;
+    let serde_cbor_2::Value::Map(m) = v else { return None };
+    match m.get(&serde_cbor_2::Value::Text("fmt".into()))? {
+        serde_cbor_2::Value::Text(s) => Some(s.clone()),
+        _ => None,
+    }
+}
+
+/// `origin` is one of this server's Lowki origins (any port in dev mode, as webauthn-rs allows).
+fn is_lowki_webauthn_origin(state: &AppState, origin: &str) -> bool {
+    let Ok(u) = url::Url::parse(origin) else { return false };
+    let got = u.origin();
+    state.config.lowki_origins.iter().any(|l| {
+        let want = l.origin();
+        if want == got {
+            return true;
+        }
+        state.config.dev_mode
+            && matches!((&want, &got), (
+                url::Origin::Tuple(ws, wh, _),
+                url::Origin::Tuple(gs, gh, _),
+            ) if ws == gs && wh == gh)
+    })
+}
+
+/// If the credential was created in a cross-origin iframe, checks it and rewrites its client
+/// data to the same-origin form webauthn-rs accepts. Returns the app origin it was created
+/// under, or `None` for a same-origin registration (left untouched).
+pub fn admit_cross_origin_registration(
+    state: &AppState,
+    credential: &mut Value,
+    expected_challenge: &[u8],
+) -> Result<Option<String>, CrossOriginRefusal> {
+    use CrossOriginRefusal::*;
+    let cdj = credential["response"]["clientDataJSON"]
+        .as_str()
+        .and_then(unb64)
+        .ok_or(Malformed)?;
+    let mut cd: serde_json::Map<String, Value> = serde_json::from_slice(&cdj).map_err(|_| Malformed)?;
+    if cd.get("crossOrigin") != Some(&Value::Bool(true)) {
+        return Ok(None);
+    }
+    if cd.get("type").and_then(Value::as_str) != Some("webauthn.create") {
+        return Err(WrongType);
+    }
+    let challenge = cd.get("challenge").and_then(Value::as_str).and_then(unb64);
+    if !challenge.is_some_and(|c| crate::crypto::ct_eq(&c, expected_challenge)) {
+        return Err(WrongChallenge);
+    }
+    if !cd
+        .get("origin")
+        .and_then(Value::as_str)
+        .is_some_and(|o| is_lowki_webauthn_origin(state, o))
+    {
+        return Err(WrongOrigin);
+    }
+    let top = cd
+        .get("topOrigin")
+        .and_then(Value::as_str)
+        .ok_or(MissingTopOrigin)?
+        .to_string();
+    // Exact match with a registered (normalized) origin: browsers serialize origins the same way.
+    let registered = state.app_origins.read().map(|s| s.contains(&top)).unwrap_or(false);
+    if !registered || state.config.is_lowki_origin(&top) {
+        return Err(UnregisteredTopOrigin);
+    }
+    let fmt = credential["response"]["attestationObject"]
+        .as_str()
+        .and_then(attestation_fmt)
+        .ok_or(Malformed)?;
+    if fmt != "none" {
+        return Err(SignedAttestation);
+    }
+    cd.insert("crossOrigin".into(), Value::Bool(false));
+    cd.remove("topOrigin");
+    let rewritten = serde_json::to_vec(&cd).map_err(|_| Malformed)?;
+    credential["response"]["clientDataJSON"] = Value::String(b64(&rewritten));
+    Ok(Some(top))
+}
+
+/// The challenge stored in a serialized `PasskeyRegistration` (`{"rs": {"challenge": b64u}}`).
+fn registration_challenge(state_json: &str) -> Option<Vec<u8>> {
+    let v: Value = serde_json::from_str(state_json).ok()?;
+    v["rs"]["challenge"].as_str().and_then(unb64)
+}
+
 async fn save_flow(
     state: &AppState,
     kind: &str,
@@ -193,6 +314,19 @@ pub async fn register_finish(
         return Err(ApiError::forbidden("session changed during registration"));
     }
     let reg: PasskeyRegistration = serde_json::from_str(&st).map_err(anyhow::Error::from)?;
+    let challenge = registration_challenge(&st).ok_or_else(ApiError::internal)?;
+    match admit_cross_origin_registration(&state, &mut req.credential, &challenge) {
+        Ok(_) => {}
+        Err(CrossOriginRefusal::UnregisteredTopOrigin) => {
+            tracing::info!("cross-origin passkey registration from an unregistered top origin");
+            return Err(ApiError::new(
+                axum::http::StatusCode::FORBIDDEN,
+                "top_origin_not_registered",
+                "passkeys can only be created inside a registered app's page",
+            ));
+        }
+        Err(reason) => return Err(webauthn_err(format!("cross-origin registration: {reason:?}"))),
+    }
     let cred: RegisterPublicKeyCredential =
         serde_json::from_value(req.credential).map_err(|_| ApiError::bad_request("malformed credential"))?;
     let passkey = state
