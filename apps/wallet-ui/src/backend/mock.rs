@@ -415,6 +415,19 @@ impl AuthBackend for MockBackend {
         })
     }
 
+    fn recover_with_code(&self, code: &str) -> BoxFut<'_, Res<()>> {
+        let ok = code.chars().filter(|c| c.is_ascii_alphanumeric()).count() >= 16;
+        Box::pin(async move {
+            self.wait(900).await;
+            self.check(&[FailMode::Network])?;
+            if !ok {
+                return Err(WalletError::Other("That recovery code isn't right. Check each group and try again.".into()));
+            }
+            self.st.borrow_mut().signed_in = true;
+            Ok(())
+        })
+    }
+
     fn backup_recovery(&self, target: BackupTarget) -> BoxFut<'_, Res<()>> {
         Box::pin(async move {
             self.wait(900).await;
@@ -525,9 +538,10 @@ impl WalletBackend for MockBackend {
                     Token::Usdc => (a.units / 10_000) as u64,
                     // 1 MON ~ $0.42 in the mock
                     Token::Mon => (a.units / 1_000_000_000_000_000 * 42 / 1000) as u64,
+                    Token::Eth => 0,
                 })
                 .sum();
-            Ok(Balances { public, private: st.private.clone(), usd_cents })
+            Ok(Balances { public, private: st.private.clone(), usd_cents, network: "Monad".into() })
         })
     }
 

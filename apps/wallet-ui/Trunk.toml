@@ -7,3 +7,8 @@ public_url = "./"
 [serve]
 addresses = ["127.0.0.1"]
 port = 8080
+
+# lowki-server's cookie API must be same-origin with the wallet (no CORS on it), so dev
+# serves it through trunk. Start it with `scripts/dev-server.sh` (port 8787).
+[[proxy]]
+backend = "http://localhost:8787/v1/"

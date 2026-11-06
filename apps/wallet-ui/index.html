@@ -7,7 +7,7 @@
     <meta name="referrer" content="no-referrer" />
     <!-- No third-party origins: fonts, icons and code are all served from Lowki. -->
     <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'" />
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://ethereum-sepolia-rpc.publicnode.com; worker-src 'self'; form-action 'none'; base-uri 'none'" />
     <title>Lowki</title>
     <link data-trunk rel="rust" data-bin="lowki-wallet-ui" data-type="main" />
     <!-- Design tokens and logos come straight from design/ (single source). -->
@@ -17,6 +17,9 @@
     <link data-trunk rel="copy-file" href="../../design/logo/lowki-lockup.svg" />
     <link data-trunk rel="copy-file" href="../../design/logo/lowki-lockup-dark.svg" />
     <link data-trunk rel="icon" href="../../design/logo/favicon.svg" />
+    <!-- Key worker (crates/lowki-worker, built with `make pkg`): bindings-only JS + wasm. -->
+    <link data-trunk rel="copy-file" href="../../crates/lowki-worker/js/worker.js" data-target-path="lowki-worker/js" />
+    <link data-trunk rel="copy-dir" href="../../crates/lowki-worker/pkg/web" data-target-path="lowki-worker/pkg/web" />
   </head>
   <body></body>
 </html>

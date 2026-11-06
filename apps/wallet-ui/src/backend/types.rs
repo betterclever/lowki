@@ -91,6 +91,8 @@ pub struct RecoveryStatus {
 pub enum Token {
     Usdc,
     Mon,
+    /// Native ether (the real backend's chain, Sepolia by default).
+    Eth,
 }
 
 impl Token {
@@ -98,25 +100,27 @@ impl Token {
         match self {
             Token::Usdc => "USDC",
             Token::Mon => "MON",
+            Token::Eth => "ETH",
         }
     }
     pub fn name(self) -> &'static str {
         match self {
             Token::Usdc => "USD Coin",
             Token::Mon => "Monad",
+            Token::Eth => "Ether",
         }
     }
     pub fn decimals(self) -> u32 {
         match self {
             Token::Usdc => 6,
-            Token::Mon => 18,
+            Token::Mon | Token::Eth => 18,
         }
     }
     /// Display precision.
     pub fn shown(self) -> u32 {
         match self {
             Token::Usdc => 2,
-            Token::Mon => 4,
+            Token::Mon | Token::Eth => 4,
         }
     }
     pub fn all() -> [Token; 2] {
@@ -202,11 +206,17 @@ pub struct Balances {
     pub private: Vec<Amount>,
     /// Display value of the public balance in US cents.
     pub usd_cents: u64,
+    /// Chain the public balance lives on, e.g. "Monad" or "Sepolia".
+    pub network: String,
 }
 
 impl Balances {
     pub fn public_of(&self, t: Token) -> Amount {
         self.public.iter().copied().find(|a| a.token == t).unwrap_or(Amount::zero(t))
+    }
+    /// Tokens this account holds or can hold, in display order.
+    pub fn tokens(&self) -> Vec<Token> {
+        self.public.iter().map(|a| a.token).collect()
     }
     pub fn private_of(&self, t: Token) -> Amount {
         self.private.iter().copied().find(|a| a.token == t).unwrap_or(Amount::zero(t))
@@ -400,6 +410,8 @@ pub enum WalletError {
     InvalidCode,
     InsufficientFunds,
     InvalidAddress,
+    /// Anything else, with a user-facing sentence. Shown inline.
+    Other(String),
 }
 
 impl WalletError {
@@ -413,6 +425,7 @@ impl WalletError {
             WalletError::InvalidCode => "That code doesn't match. Check the latest email and try again.".into(),
             WalletError::InsufficientFunds => "Not enough balance for this amount.".into(),
             WalletError::InvalidAddress => "That doesn't look like a valid address.".into(),
+            WalletError::Other(m) => m.clone(),
         }
     }
 }

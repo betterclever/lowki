@@ -1,12 +1,13 @@
 //! Backend boundary for the wallet UI.
 //!
-//! The UI only talks to [`AuthBackend`] and [`WalletBackend`]. Today they are
-//! implemented by [`mock::MockBackend`]; the real implementation (the Rust
-//! worker running the passkey/PRF unwrap, Kohaku prover and the Lowki server
-//! client) plugs in behind the same traits. Nothing in `screens/` knows which
+//! The UI only talks to [`AuthBackend`] and [`WalletBackend`]. Two implementations:
+//! [`real::RealBackend`] (lowki-worker in a Web Worker, lowki-server, a chain RPC) and
+//! [`mock::MockBackend`] (screenshots, deep links, the dev panel). `main.rs` picks one at
+//! runtime (`?backend=mock|real`, default real). Nothing in `screens/` knows which
 //! implementation is live.
 
 pub mod mock;
+pub mod real;
 pub mod types;
 
 use std::future::Future;
@@ -38,6 +39,10 @@ pub trait AuthBackend {
     fn create_passkey(&self) -> BoxFut<'_, Res<RecoveryCode>>;
     /// Fallback when PRF is missing: unlock with Google + recovery code.
     fn continue_without_prf(&self) -> BoxFut<'_, Res<RecoveryCode>>;
+    /// Lost passkey: after an email (or Google) sign-in, the server releases share S and
+    /// the worker rebuilds the seed from S + the recovery code R. The next
+    /// [`AuthBackend::create_passkey`] wraps that same seed for a new passkey.
+    fn recover_with_code(&self, code: &str) -> BoxFut<'_, Res<()>>;
     fn backup_recovery(&self, target: BackupTarget) -> BoxFut<'_, Res<()>>;
     /// Marks the recovery code as shown-and-acknowledged (or postponed).
     fn acknowledge_recovery(&self, saved: bool) -> BoxFut<'_, Res<()>>;

@@ -14,6 +14,8 @@
 //! - `dev=1`: show the dev panel
 //! - `embed=1`: transparent backdrop for iframe embedding
 //! - `theme=light|dark`: force a theme (otherwise prefers-color-scheme)
+//! - `backend=mock|real`: which backend runs (default `real`; `screen=` implies `mock`)
+//! - `google=1`: show "Continue with Google" with the real backend (always shown with the mock)
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -56,6 +58,9 @@ pub struct Flags {
     pub dev: bool,
     pub embed: bool,
     pub theme: Option<String>,
+    /// The mock backend runs (`backend=mock`, or a `screen=` deep link).
+    pub mock: bool,
+    pub google: bool,
 }
 
 pub fn flags() -> Flags {
@@ -77,9 +82,20 @@ pub fn flags() -> Flags {
     if origin != "*" {
         app.origin = origin.clone();
     }
+    let mock = match get("backend").as_deref() {
+        Some("mock") => true,
+        Some("real") => false,
+        _ => get("screen").is_some() || cfg!(feature = "mock-default"),
+    };
+    let google = match get("google").as_deref() {
+        Some(v) => v != "0" && v != "false",
+        None => mock,
+    };
     Flags {
         app,
         origin,
+        mock,
+        google,
         screen: get("screen"),
         fail: get("fail").and_then(|f| FailMode::parse(&f)),
         speed: get("speed").and_then(|s| s.parse().ok()).unwrap_or(1.0),
@@ -177,7 +193,7 @@ pub fn apply_initial(c: Ctx, f: &Flags) {
     if let Some(p) = f.platform {
         c.platform.set(p);
     }
-    let Some(target) = f.screen.clone() else { return };
+    let Some(target) = f.screen.clone().filter(|_| f.mock) else { return };
     let m = mock();
     let app = f.app.clone();
     let fail = f.fail;
