@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lowki reference wallet (test fixture)</title>
+    <style>
+      html, body { margin: 0; background: transparent; font: 15px/1.5 system-ui, sans-serif; }
+      .sheet { margin: 24px auto; max-width: 380px; background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 8px 32px rgba(0,0,0,.2); }
+      .sheet[hidden] { display: none; }
+      pre { white-space: pre-wrap; word-break: break-all; background: #f4f4f6; padding: 8px; font-size: 12px; max-height: 240px; overflow: auto; }
+      .row { display: flex; gap: 8px; justify-content: flex-end; }
+      .warn { color: #a33; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="sheet" id="sheet" hidden>
+      <h1 id="title" tabindex="-1"></h1>
+      <pre id="detail"></pre>
+      <div class="row">
+        <button type="button" data-test="reject" id="reject">Reject</button>
+        <button type="button" data-test="approve" id="approve">Approve</button>
+      </div>
+      <p class="warn">Test fixture: a fixed, public dev key. Not the Lowki wallet.</p>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

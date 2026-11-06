@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Lowki reads the wallet location from here when config.lowki.walletUrl is not set.
+         Defaults to a local `trunk serve` of apps/wallet-ui; `?wallet=<url>` overrides it. -->
+    <meta name="lowki:wallet-url" content="http://127.0.0.1:8080/" />
+    <script>
+      (function () {
+        var w = new URLSearchParams(location.search).get('wallet');
+        if (w) document.querySelector('meta[name="lowki:wallet-url"]').setAttribute('content', w);
+      })();
+    </script>
+    <title>Privy Swap</title>
+    <style>
+      body { font: 15px/1.5 system-ui, sans-serif; margin: 24px; max-width: 760px; }
+      pre { white-space: pre-wrap; word-break: break-all; background: #f4f4f6; padding: 6px 8px; min-height: 1em; }
+      button { margin: 6px 6px 0 0; }
+      dd { font-family: ui-monospace, monospace; margin-left: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/lowki/main.lowki.tsx"></script>
+  </body>
+</html>

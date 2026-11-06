@@ -1,0 +1,5 @@
+{
+  // The shared app files, resolved against the real @privy-io/react-auth.
+  "extends": "./tsconfig.base.json",
+  "include": ["src/app", "src/main.tsx", "src/vite-env.d.ts"]
+}

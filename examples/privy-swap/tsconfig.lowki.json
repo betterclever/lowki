@@ -1,0 +1,13 @@
+{
+  // The SAME shared files, with '@privy-io/react-auth' pointed at the built
+  // @lowki/react-auth types (what an app gets after changing its import),
+  // plus the Lowki-only entry.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@privy-io/react-auth": ["../../packages/lowki-react-auth/dist/index.d.ts"],
+      "@lowki/react-auth": ["../../packages/lowki-react-auth/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/app", "src/main.tsx", "src/vite-env.d.ts", "src/lowki"]
+}
