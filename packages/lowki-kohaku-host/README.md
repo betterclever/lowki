@@ -25,11 +25,18 @@ npx tsx --import ./resolve-hook.mjs scripts/sepolia-sync.ts   # read-only Sepoli
 | `src/storage.ts` | `EncryptedStorage` (AES-256-GCM via WebCrypto) over `MemoryBackend` / `IndexedDBBackend` / `LocalStorageBackend`; `StorageKeyProvider` hook |
 | `src/network.ts` | `createNetwork`: fetch passthrough, optional host allowlist, https-only |
 | `src/provider.ts` | `createRpcProvider`: Kohaku's viem adapter over a viem client whose fetch goes through the host `Network`; several URLs use a viem `fallback` transport |
+| `src/anon-provider.ts` | Anon-RPC provider mode (Nox/Nym/tor-js via `@anon-rpc/browser-harness` 0.4.0 + Kohaku `raw`), reported fallback, per-address session pool |
+| `browser-anon/` | Headless-Chrome probe of the anon mode (`build.mjs`, `page.ts`, `run-mac.mjs`) |
+| `test/anon-provider.test.ts` | Fallback/isolation unit tests (fake harness) |
 | `src/host.ts` | `createLowkiHost({ transport, storage, network, provider, wiring })` → `{ host, keystore, secretManager }` |
 | `src/kohaku-pp.ts` | The single import point for `@kohaku-eth/privacy-pools` (deep source imports, see Kohaku issues) |
 | `resolve-hook.mjs`, `resolve-hook-impl.mjs` | Node resolve hook: `@kohaku-eth/*` → Kohaku sources, Kohaku's `~/` alias, Kohaku's bare deps → this package's `node_modules` |
 | `scripts/load-worker.ts` | Picks the real wasm worker or the stub (`LOWKI_WORKER=real\|stub`) |
 | `scripts/sepolia-sync.ts` | Read-only Sepolia run |
+| `src/prover.ts` | `lowkiProverFactory`: Kohaku `proverFactory` on the worker's `ppProveWithdraw` / `ppProveCommitment` (lowki-groth16), with a public-signal cross-check |
+| `scripts/fork-private-send.ts` | Shield → ASP → sync → prove → relay → checks → ragequit on an anvil Sepolia fork (run via `../../scripts/fork-private-send.sh`; see `docs/PRIVATE-SEND.md`) |
+| `scripts/asp-from-chain-probe.ts` | Checks whether Sepolia ASP roots equal a LeanIMT of on-chain deposit labels (only the first 20 of 802 do) |
+| `scripts/pp-sepolia.ts` | Live Sepolia runbook (`status`/`fund`/`shield`/`ragequit`/`withdraw`), dry run unless `BROADCAST=1`; also runs against a fork |
 | `test/stub-worker.ts` | **TEST-ONLY** JS stub of the worker (keys in JS). Never ship. |
 | `test/host.test.ts` | Unit tests |
 
@@ -148,9 +155,105 @@ are written, `state-manager.ts`).
 
 `createNetwork({ allowHosts, httpsOnly })` wraps `fetch`; `"*.example.com"` matches subdomains.
 The viem RPC client uses the same `Network`, so the allowlist covers RPC too. The plain RPC sees
-the plugin's reads; for privacy, swap in Kohaku's anon/Helios/Colibri providers later.
+the plugin's reads; see "Anon-RPC provider" for the anonymous mode.
 `externalSyncProvider` is passed through but Privacy Pools does not use it (only Tornado does, see
 below).
+
+## Anon-RPC provider
+
+`src/anon-provider.ts` is the anonymous-read mode. It reimplements Kohaku's `anon` adapter
+(`packages/provider/src/anon`) as a thin wrapper over `@anon-rpc/browser-harness` **0.4.0** and
+Kohaku's `raw` adapter, for two reasons:
+- Kohaku's adapter doesn't forward `anonOptions`, so it can't pass `isolationKey`.
+- Kohaku's adapter throws on a failed boot; this wrapper reports it instead.
+
+It uses Kohaku's anon receipt polling (4 s / 5 min). Browser-only: the harness runs the network client in a null-origin sandboxed iframe and dials over WebRTC (KPS).
+
+```ts
+const r = await createAnonProvider({
+  rpcUrl: "https://sepolia.gateway.tenderly.co",  // destination, reached through the anon network
+  network: "auto",              // nox on Chromium/Firefox, nym on Safari/WebKit + every iOS browser
+  // torGateways: ["ip:port:hash"], // tor-js only; default = the EF dev's temporary 159.89.167.167 gateway
+  bootTimeoutMs: 60_000,        // the harness has none of its own
+  isolationKey: appAddress,     // sent as anonOptions.isolationKey on every call
+  fallback: { rpcUrl },         // or `false`: reject with AnonUnavailableError instead
+  onFallback: ({ network, reason }) => warnUser(reason),
+});
+// r: { provider, anonymous: true, network, bootMs, fetch, close }
+//  | { provider, anonymous: false, network, bootMs, reason, error, fallbackRpcUrl, fetch, close }
+createLowkiHost({ ..., provider: r.provider, network: createNetwork({ allowHosts, fetch: anonFetchFor(r) }) });
+```
+
+- **Fallback:** it applies only to the boot (harness error, worker declined, or timeout). It is never silent: the result carries `anonymous: false` and `reason`, and `onFallback` fires. Once a session has booted, a failed call rejects; it is never re-sent directly.
+- **What anonymous traffic bypasses:** it leaves through the worker's own transport, so the host `Network` allowlist does not apply to it. The bootstrap read and a direct fallback still go through `fetchFn`.
+- **Bootstrap read:** each session reads the network's specifier contract once (`workerHash`/`workerResolvers`) over a plain RPC, which is not anonymous. Nox's specifier is on **Sepolia**; Nym's and tor-js's are on mainnet. The defaults are in `DEFAULT_BOOTSTRAP_URLS`.
+- **`anonFetchFor(r)`:** routes Kohaku's other HTTP through the same session (relayer `RelayerClient`, paymaster bundler client, IPFS/0xbow ASP), since all of it goes through `host.network`.
+- **`createAnonSessionPool({ ..., isolation })`:** `forAddress(addr)` gives one session per app address (lazy, cached). Each result reports `anonymous` separately. There are two modes:
+  - `isolation: "worker"` (default): a separate `AnonRpcWorker` per address, plus `isolationKey = address`.
+  - `isolation: "isolationKey"`: one shared worker, with a different `isolationKey` per address.
+
+### Measured (2026-11-06, headless Chrome 156, macOS host; direct egress IP 45.127.45.75)
+
+```sh
+npm install
+node browser-anon/build.mjs                          # esbuild bundle of browser-anon/page.ts (Linux or mac)
+mac sh -lc 'cd <lowki>/packages/lowki-kohaku-host && ANON_QUERY="ipn=4" node browser-anon/run-mac.mjs nox nym tor-js'
+#   ANON_QUERY extras: rpc=<sepolia rpc>  gw=<tor gateway>  boot=<ms>  second=0  kohaku=0  kblocks=<n>
+node --import ./resolve-hook.mjs --import tsx --test test/anon-provider.test.ts   # fallback/isolation logic, fake harness (8/8)
+```
+
+`run-mac.mjs` starts chromedriver 156 with `--headless=new` and the anon-rpc e2e WebRTC flags (`--disable-features=WebRtcHideLocalIpsWithMdns --force-webrtc-ip-handling-policy=default`). It serves the page and prints `window.__anon`. The IP echo is `api.ipify.org`. Every anon run returned Sepolia chainId 11155111, the head block (about 12,078,5xx, the same as direct) and the ETH pool balance `31986556177510679061` wei.
+
+| | Nox | Nym | tor-js (gateway 159.89.167.167) |
+|---|---|---|---|
+| Boot (`ready`) | 3.1 s, 2.8 s, 3.1 s, 3.4 s | 11.0 s, 10.3 s, 10.8 s, 10.9 s | 2.7–3.7 s |
+| First call after boot | 1.3–2.1 s | 9.6–13.4 s; first call on a 2nd worker 8–20 s | 1.8–3.9 s |
+| Steady-state `eth_blockNumber`/`eth_getBalance`/`eth_getTransactionCount` | 0.4–1.4 s | 0.5–5 s; outliers 7–22 s | 0.7–1.2 s (publicnode), 0.8–2.9 s (ethpandaops) |
+| `eth_getLogs`, 5,000 blocks of the ETH pool (direct: 0.3–2.4 s) | 0.6–0.8 s | 0.8–2.3 s | 0.8–3.8 s |
+| Kohaku `EthClient` incremental step: blockNumber, getLogs of entrypoint and ETH pool over 15,000 blocks (3 windows each), `currentRoot`, `latestRoot` | **8.6 s** | **12.8 s** | **21.9 s** (ethpandaops) |
+| Egress IP (direct 45.127.45.75) | 98.92.70.228, 3.226.251.110, 13.223.188.90 (AWS) | 45.9.168.34, 185.191.239.7, 185.246.188.210, 193.200.238.106 | Tor exits: 192.42.116.x, 171.25.193.x, 185.220.10x.x, 109.70.100.x, 204.8.96.x, … |
+| Different `isolationKey`, same worker | **No effect.** The exit varies per request among about 3 IPs regardless of key (key A got .228 and .110; key B got .110 and .90) | **No effect.** One exit (IP Packet Router) per worker for every key (10/10 same IP) | **Honoured.** A separate circuit per key: key A 4/4 on one exit, key B 4/4 on another |
+| Second worker | Same 3-IP exit pool | **New exit** (different IPR) | New circuit / exit |
+| Failures seen | none | one boot failed in 0.6 s with `Failed to fetch` (bundle or bootstrap fetch). The fallback reported `anonymous: false` and the retry worked | `sepolia.gateway.tenderly.co` returns **HTTP 403 to Tor exits**. `ethereum-sepolia-rpc.publicnode.com` over Tor refuses 15,000-block log ranges (`pruned history unavailable`). `rpc.sepolia.ethpandaops.io` works for everything |
+
+The forced-failure check used tor-js with an unreachable gateway and `boot=20000`. It returned `anonymous: false` with reason `anon-rpc tor-js boot timed out after 20000 ms`, after 20,007 ms.
+
+### Per-address isolation: what you actually get
+
+- **tor-js:** `isolationKey` alone gives each address its own Tor circuit and exit inside one worker. A worker per address is not needed for IP unlinkability.
+- **Nym:** `isolationKey` is ignored. Each worker is one Nym client with one exit IPR, and every address on that worker shares the egress IP. Only `isolation: "worker"` separates addresses. Its cost is roughly 10 s of boot plus a slow first call, and an 18 MB bundle per worker.
+- **Nox:** `isolationKey` is ignored. Every request already leaves from one of a small shared pool of exits, chosen per request. Requests from different addresses (and from other Nox users) share those exit IPs, so the RPC can't separate users by IP. That is also true within one address, and it is the network's property, not per-address isolation. A separate worker per address gives separate Sphinx sessions; we can't observe whether that adds anything beyond the per-request mixing.
+- **Shared state across workers:** separate workers on one host origin share the harness storage. It is IndexedDB, namespaced per specifier, not per worker, so any persistent client state the network keeps there (for example cached directory data or client keys) is the same for every per-address worker. Nothing at the harness level changes this; it would need a per-session namespace in the spec.
+- **What the RPC still sees:** request timing and content. Reading address A and then address B 200 ms later still correlates them, so stagger per-address reads.
+
+### Which calls should go through anon
+
+- **Through anon:** everything that names the user. That means balances, nonces and code of the user's app addresses, receipts and `waitForTransaction` for the user's own transactions, `eth_sendRawTransaction` (deposit and ragequit), `eth_estimateGas`/`eth_call` with the user's data, relayer quote and relay, bundler and paymaster calls, and ASP fetches (wire these through `anonFetchFor`). Each is about one call, at 0.5–2 s on Nox and tor-js and up to about 20 s on Nym.
+- **Incremental pool sync through anon:** this is practical too, at 9–22 s for 15,000 blocks (about 2 days of Sepolia), and it hides *that* this IP follows Privacy Pools.
+- **Cold sync over direct RPC:** a cold sync from block 8,461,453 is about 3,076 RPC requests (the Sepolia run below). Serially that is about 45 min on Nox, 1–3 h on tor-js and several hours on Nym. These are user-neutral scans that fetch the same data for everyone. Ship a snapshot, or do the cold scan direct and only the increments anonymously.
+- **Pick a destination RPC that serves Tor:** Tenderly's public gateway 403s Tor exits.
+
+### Anon-RPC gaps
+
+- Kohaku's `Host` has one `provider`, so the Privacy Pools plugin can't send its cold scan direct and its increments through anon on its own. Switch the provider between the two phases, or use two hosts on the same storage.
+- **Only desktop Chrome was tested.** The Safari/iOS → Nym choice rests on the reports in the chat, not on a run here.
+- The tor-js gateway is temporary; production needs our own KPS gateway (`torGateways`).
+- The harness bundles come from on-chain specifiers. Whoever controls each specifier controls the code; the harness checks the hash, nothing more.
+
+## Proving with the worker (`src/prover.ts`)
+
+`lowkiProverFactory(transport, { chainId, entrypoint })` is passed as
+`PrivacyPoolsV1Protocol({ proverFactory })`. For each witness Kohaku builds, it finds the note
+reference whose `poseidon(nullifier, salt)` equals the worker's `ppNote` precommitment (walk over
+`(depositIndex, secretIndex)`, cached), calls `ppProveWithdraw` / `ppProveCommitment` with
+Kohaku's Merkle proofs, and refuses the proof unless every public signal (new commitment,
+nullifier hash, value, both roots, context) equals what Kohaku's witness implies. Used end to end
+on a Sepolia fork (`docs/PRIVATE-SEND.md`): the on-chain verifier accepted the worker proofs and
+Kohaku recognised the worker-derived change note. It does not keep note secrets out of JS (Kohaku
+computed them already); see "Proving".
+
+`src/protocol.ts` now also types `ppNote`, `ppShield`, `ppLoadCircuits`, `ppProveWithdraw`,
+`ppProveCommitment`, `appAccount` and `signTransaction`.
 
 ## Kohaku issues hit (pinned commit 8c83d64)
 
@@ -182,7 +285,11 @@ below).
    (`ASP=none`, picked automatically by a CID preflight): the instrumented `DataService.getLogs`
    withholds RootUpdated logs, Kohaku skips the ASP step, and every note is reported as
    pending. Approved + pending is still the full balance; only the approval split is unknown.
-6. Kohaku's `tests/utils/mock-host.ts` keystore returns a non-promise from `deriveAt` and uses
+6. Kohaku's `tests/state.11155111.json` snapshot (lastSyncedBlock 11,627,888) contains the
+   `[0,1,2]` ASP root that Kohaku's own fork tests pushed (block 0xb16d71, CID `bafybeihrec…`),
+   which never happened on the real chain. Starting an ASP-blind sync from it fails
+   `verifyRootsThunk`; the scripts drop its `asp`/`updateRootEvents` slices first.
+7. Kohaku's `tests/utils/mock-host.ts` keystore returns a non-promise from `deriveAt` and uses
    ethers' HD wallet; fine for tests, just not the `Keystore` type.
 
 ## Gaps
