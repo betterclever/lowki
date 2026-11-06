@@ -25,6 +25,12 @@ let pending = gpu.submit(&[MsmJob::G1(&a, &s.0), MsmJob::G2(&b2, &s.0)])?;  // r
 // ... CPU work here overlaps with the GPU ...
 let out: Vec<MsmOutput> = pending.wait().await?;    // MsmOutput::G1(G1Projective) / ::G2(..)
 let p = gpu.msm_g1(&a, &scalars).await?;            // convenience wrapper for one MSM
+
+// snarkjs' QAP witness map (the Groth16 "h" scalars) on the GPU:
+let t = gpu.qap_tables(n, omega, g)?;               // once per domain: ω (n-th root), g (2n-th root)
+let mut q = gpu.submit_qap(&t, &a, &b)?;            // constraint evaluations a, b (length n)
+let h: BigInts = q.read().await?;                   // canonical h, as soon as the QAP kernels finish
+q.finish().await?;                                  // wipe + release, surface GPU errors
 ```
 
 - **Async.** The API is async because WebGPU adapter/device requests and buffer mapping are
@@ -43,6 +49,16 @@ let p = gpu.msm_g1(&a, &scalars).await?;            // convenience wrapper for o
   `Input` covers bad arguments: more scalars than bases, a scalar ≥ r, or a buffer larger
   than the device limit.
 - `GpuBases::{len, gpu_bytes, window_bits, set_window_bits}`, `Gpu::{adapter_info, max_storage_binding}`.
+- **QAP (`qap` module, round 2).** It computes c = a∘b, then IFFT, coset shift and FFT on a,
+  b and c, then h = ab − c, over Fr. It uses the same 20 × 13-bit Montgomery representation
+  (R = 2^260), generated from the Fr modulus by the same WGSL emitter.
+  - Inputs are uploaded as arkworks' Montgomery words and converted on the GPU (× 2^264 mod r).
+  - The NTTs are radix-2 decimation-in-time, with one dispatch per stage over all three
+    vectors: 37 dispatches for n = 2^16.
+  - Every per-proof buffer (inputs, vectors, h, staging) is zeroed on the GPU and destroyed,
+    like the MSM buffers.
+  - Timing: 2^16 in 6.8–8.1 ms on Metal, including upload and readback.
+  - Resident tables: 2 × n × 80 B (10 MiB at 2^16).
 - Test-only hooks (`#[doc(hidden)]`): `field_selftest`, `point_selftest`,
   `debug_scratch_g1`.
 
@@ -154,6 +170,7 @@ maxBufferSize of 4294967292. wgpu's own `AdapterInfo` is empty on the web.
 | `g2_msm_matches_ark` (GPU) | n ∈ {1, 2, 3, 255, 256, 1000, 2^15} × {random, mixed, all-zero, all r−1} + edge cases | pass on Metal |
 | `batch_of_jobs`, `rejects_bad_input` (GPU) | mixed G1/G2 batch; too many scalars and unreduced scalars are rejected | pass on Metal |
 | `tests/wasm.rs` (headless Chrome) | G1 n ∈ {1, 2, 3, 255, 256, 1000, 2^16} with random scalars (plus r−1, 0, infinity and a repeated base) and all-zero scalars; G2 n = 1000; vs ark compiled into the same wasm | pass in Chrome WebGPU |
+| `tests/qap.rs` (GPU) | GPU QAP == the CPU witness map (arkworks FFTs, the same steps as lowki-groth16's `CircomReduction`), element by element, for n = 2, 4, 8, 2^10, 2^12, 2^16. Inputs mirror the prover: zero input rows in b, zero padding, and −1 values. Wrong generators and wrong lengths are rejected. | pass on Metal; byte-identical proofs in Chrome via `lowki-groth16` `make verify-webgpu-chrome` |
 | real proving-key bases | see `lowki-groth16/tests/gpu.rs`: a/b_g1/l/b_g2 with the real witness and random scalars, h (2^16) with random scalars, == ark | pass on Metal |
 
 Without a GPU, as on the Linux VM, every GPU test prints `SKIP` and passes; the CPU tests
@@ -226,4 +243,9 @@ The test prints `LOWKI_GPU adapter ...`, then `LOWKI_MSM ... ok` lines. If it pr
   host (Metal compiler cache cold); warm, it takes 15–40 ms. In headless Chrome,
   `Gpu::new` measured about 30 ms. Chrome may compile pipelines lazily or keep its own
   cache, so a cold start on a user's machine may cost more than measured here.
-- **Fixed parameters.** BN254 only; scalars must be < r.
+- **Fixed parameters.** BN254 only; scalars must be < r. QAP domains must be powers of two
+  between 2 and 2^27.
+- **Tuning tried, not adopted (round 2, Chrome).** No measurable win came from changing
+  `TASK_MAX` to 8 or 16, or the window bits to 5–9. Interleaving the jobs' dispatches in one
+  pass made proofs slower. Small G2 MSMs stay latency-bound (commitment: 18 ms native for
+  1.5k points), which is why lowki-groth16 runs them on the CPU.

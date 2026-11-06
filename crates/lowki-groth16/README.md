@@ -8,8 +8,9 @@ snarkjs `groth16.verify`, and it outputs the Solidity `{pA, pB, pC, pubSignals}`
 ## Public API
 
 ```rust
-let prover = CircuitProver::load(Circuit::Withdraw, &wasm_bytes, &zkey_bytes)?; // artifact bytes (browser-fetched)
+let prover = CircuitProver::load(Circuit::Withdraw, &wasm_bytes, &zkey_bytes)?; // must be the pinned 1.0.5 artifacts
 let prover = CircuitProver::load_async(Circuit::Withdraw, &wasm_bytes, &zkey_bytes).await?; // wasm32 only
+let prover = CircuitProver::load_unpinned(Circuit::Withdraw, &wasm_bytes, &zkey_bytes)?; // escape hatch, see below
 let out: ProofOutput = prove_withdraw(&prover, &WithdrawInputs::from_json(json)?)?;
 let out: ProofOutput = prove_commitment(&commitment_prover, &CommitmentInputs::from_json(json)?)?;
 verify(&parse_vkey_json(vkey_json)?, &out.proof, &out.public_signals)?; // -> bool
@@ -27,6 +28,17 @@ verify(&parse_vkey_json(vkey_json)?, &out.proof, &out.public_signals)?; // -> bo
   (`"webassembly"` or `"wasmi"`, see "Design").
 - wasm32 only: `CircuitProver::load_async` compiles the witness `.wasm` with
   `WebAssembly.compile` instead of synchronously. Use it on a browser main thread.
+- **Pinned artifacts.** `load` and `load_async` first check the sha256 of both artifacts
+  against `PINNED_SHA256`, which holds the `@fatsolutions/privacy-pools-core-circuits@1.0.5`
+  values listed under "Running". On a mismatch they return
+  `Error::Circuit("<circuit>.<wasm|zkey> has sha256 …, not the pinned … (use load_unpinned for custom artifacts)")`.
+  The check costs about 40 ms for withdraw natively, and about 37 ms of the one-time load
+  in Chrome.
+- **Escape hatch.** `CircuitProver::load_unpinned` (and the wasm32-only `load_async_unpinned`)
+  skip the pin. They are meant for tests and for custom or re-generated artifacts that you
+  trust to match your on-chain verifier. Because the bytes are not pinned, they
+  subgroup-check every proving-key G2 point (see "zkey + proving"). For withdraw that makes
+  the load slower: 0.85 s natively, 2.5 s in Chrome.
 - Inputs use the circuit signal names in JSON (`withdrawnValue`, `stateSiblings`, `ASPRoot`, …).
   Values are decimal or `0x` strings, reduced mod r like snarkjs `normalize`.
 - Public signal order: commitment `[commitment, nullifierHash, value, label]`; withdraw
@@ -93,10 +105,23 @@ linear memory held the secrets, and it is zeroed before it is dropped.
 - It reads from `&[u8]`.
 - It returns errors where upstream panics.
 - It checks the field and curve.
-- It checks every point is on the curve, but skips G2 subgroup checks.
+- It checks every point is on the curve. On bn254, G1 has cofactor 1, so for G1 that is also
+  the subgroup check.
+- It checks the verifying key's G2 points (β, γ, δ) for subgroup membership. It also checks
+  every `b_g2_query` point (36 901 for withdraw), unless the file is the sha256-pinned
+  artifact. Why that check matters: an on-curve G2 base outside the r-order subgroup would
+  put a small-order component into the proof's B. Its value would depend on the witness, so
+  a malicious zkey could leak witness bits through it. The pinned zkeys pass the full check
+  (`tests/artifacts.rs`, which runs it on the exact bytes the pin accepts). So a matching
+  pin implies the check, and `load` skips its cost: 0.85 s native and 2.5 s in Chrome for
+  withdraw. The check is `is_in_correct_subgroup_assuming_on_curve`, which arkworks
+  implements with the ψ endomorphism. The vkey parser (`parse_vkey_json`) and proof parser
+  (`SnarkjsProof::to_ark`) already checked G2 subgroup membership and G1 on-curve.
 - It fixes upstream's off-by-one in `num_witness_variables`.
 
-`src/qap.rs` is ark-circom's `CircomReduction` (snarkjs' R1CS→QAP map), copied verbatim.
+`src/qap.rs` is ark-circom's `CircomReduction` (snarkjs' R1CS→QAP map), copied verbatim. The
+only change splits the sparse constraint evaluation out (`constraint_evaluations`), so that the
+WebGPU path can run the rest of it on the GPU.
 Proving uses `ark-groth16` 0.5 `create_proof_with_reduction_and_matrices`. I did **not**
 depend on `ark-circom` itself, because it pulls in wasmer unconditionally.
 
@@ -137,6 +162,7 @@ zero withdrawal, and a 2^128−1 value.
 | (iv) snarkjs verifies Rust proofs | `make verify` → `verify-rust-proofs.ts` (also re-derives Kohaku's Solidity struct from each Rust proof) | 17/17 native, 2/2 wasm-made |
 | (v) Solidity format | `v_solidity_format_matches_reference`: compares `to_solidity` on a fixed snarkjs proof with Kohaku `toWithdrawProof` / `encodeRagequitPayload` **and** snarkjs `exportSolidityCallData` | pass (both circuits) |
 | wasm32 | `tests/wasm.rs` (wasm-bindgen-test under Node): proves both circuits in wasm, then `make verify-wasm` has snarkjs verify them | pass |
+| artifact pins and zkey points | `tests/artifacts.rs` (native). `load` accepts the pinned files and rejects a single flipped byte in either one with the sha256 message. The pinned zkeys pass the full G2 subgroup check (`load_unpinned`). An on-curve G2 point outside the subgroup, written into `b_g2_query`, is rejected by `load_unpinned` (`Error::Zkey`) and by `load` (pin). Swapped circuits are rejected. | pass |
 | wasm32 witness engines | `make verify-witness-chrome` (`tests/wasm_witness.rs`, headless Chrome 156, main thread). The host-WebAssembly witness, from both `load` and `load_async`, is compared element by element against the wasmi witness **and** snarkjs `witness/*.bin`, plus the sha256 pin. The test also checks that a circuit assert failure (withdraw > balance) gives the same `Error::Witness` text from both engines, and that the prover still works afterwards. | 17/17 identical (1542 / 36901 signals); error parity pass |
 
 Note on (v): in package 1.0.5, `snarkjsProofToSolidityFormat` (`dist/types.js`) is a stub that
@@ -223,16 +249,28 @@ match out {
 How it works:
 
 - **Shared base path.** `GpuProver` holds a `CircuitProver`, and its proving-key queries
-  stay resident on the GPU (a, b_g1, b_g2, l, h: 38 MiB for withdraw). The witness (the
-  host's WebAssembly engine on wasm32, wasmi natively) and the H witness map (FFTs) run on the CPU. The five MSMs run on the GPU via
-  [`lowki-gpu`](../lowki-gpu/README.md): A, B_G1, L and H in G1, and B in G2.
+  stay resident on the GPU (a, b_g1, b_g2, l, h: 38 MiB for withdraw). The QAP twiddle and
+  coset tables also stay resident (10 MiB for withdraw).
+- **What runs on the CPU.** The witness runs there (the host's WebAssembly engine on wasm32,
+  wasmi natively), and so does the sparse constraint evaluation (a, b).
+- **What runs on the GPU.** The rest of the H witness map runs on the GPU via
+  [`lowki-gpu`](../lowki-gpu/README.md)'s `qap` module: c = a∘b, 3 inverse NTTs, the coset
+  shift, 3 NTTs, and h = ab − c, all exact. It uses the same ω and g as ark-poly's domain.
+  The MSMs also run on the GPU: A, B_G1, L and H in G1, and B in G2. One exception: for
+  small circuits (≤ 8 192 bases), B in G2 runs on the CPU instead, alongside the GPU's G1
+  MSMs. A small G2 MSM is bound by GPU step latency: each step is one Fq2 point addition per
+  thread. Measured for commitment in Chrome, this changes the total from 70 to 48 ms.
 - **Same proof as the CPU path.** Assembly uses exactly the CPU path's formula
   (`src/stages.rs`). With the same RNG the proof is byte-identical to
   `create_proof_with_reduction_and_matrices` with `CircomReduction`.
 - **Always pairing-checked.** Every GPU proof goes through the same 3-pairing self-check
   before it is returned.
-- **Overlap.** The H-independent MSMs (A, B_G2, B_G1, L) are submitted first, and the CPU
-  computes the FFTs while the GPU works.
+- **Overlap.**
+  1. The QAP is submitted first.
+  2. The CPU plans the H-independent MSMs (A, B_G2, B_G1, L) and submits them while the GPU
+     runs the NTTs.
+  3. h is read back (2 MiB) and H is planned and submitted.
+  4. On small circuits, the CPU then computes B in G2.
 - **CPU path unchanged.** The default CPU path (`prove_withdraw`, `prove_commitment`) does
   not change and stays the default. The feature adds `lowki-gpu` (wgpu 30) as a dependency.
 
@@ -260,11 +298,15 @@ Commitment (n = 1 542, domain 4 096) splits the same way. Total: 52 ms native an
 - **G1 MSMs: GPU.** They are 64 % of the native time and 53 % in wasm.
 - **G2 MSM: GPU.** It is 20 % in both. With only G1 on the GPU it would become the largest
   remaining stage, about 0.5 s in wasm.
-- **NTT/FFT: CPU, for now.** The FFTs already run while the GPU computes A/B/L. Now that the
-  witness takes ~25 ms, they are the **largest stage of a WebGPU withdraw proof in Chrome**:
-  ~176 ms of ~263 ms, on the critical path. The GPU then waits only ~47 ms for H. A GPU NTT, or
-  a faster wasm32 field multiply (ark-ff's 64×64→128-bit products are emulated on wasm32), is
-  the next step. It could save up to ~0.13 s and was not done here: neither is a cheap change.
+- **NTT/FFT: GPU (round 2).** Once the witness took ~25 ms, the CPU FFTs became the largest
+  stage of a WebGPU withdraw in Chrome (~176 ms of ~263 ms), and they were on the critical
+  path. Two options were measured first:
+  - A 32-bit-limb Montgomery multiply for wasm32 brought **no gain**: 31.7 ns against ark's
+    32.8 ns in Chrome (`bench/rust/src/fieldbench.rs`), so it was dropped.
+  - ark's 2^16 FFT takes 26.5 ms in Chrome. The six FFTs are ~159 ms.
+
+  The GPU QAP does the whole 2^16 map in 6.8 ms on Metal, including upload and readback.
+  In Chrome the wait for it is 2–9 ms. The critical path is now the GPU MSMs.
 
 ### Timings
 
@@ -275,39 +317,51 @@ the FFTs, the MSMs and the pairing self-check.
 | | commitment | withdraw |
 |---|---|---|
 | native CPU, 1 thread | 50–59 ms (profile avg 52 ms) | 856–916 ms (profile avg 886 ms) |
-| native Metal (`GpuProver`) | 32–49 ms (warm avg 36 ms, first 67 ms) | 182–242 ms (warm avg 182 ms, first 193 ms) |
-| wasm CPU, headless Chrome | 127–152 ms (bench median 126 ms; was 147–191 ms with wasmi) | 2.07–2.15 s (bench median 2.05 s; was 2.54–3.02 s) |
-| **wasm WebGPU, headless Chrome** | **57–89 ms** (bench median 63 ms; was 74–117 ms) | **262–272 ms** (bench median 263 ms; was 0.72–1.16 s) |
-| snarkjs 0.7.5 `fullProve`, same Chrome, default web workers (18), for reference | 40 ms | 581 ms |
+| native Metal (`GpuProver`) | 33–39 ms (`make test-webgpu`) | 187–248 ms (natively the 111 ms wasmi witness dominates; round 1: 182–242 ms) |
+| wasm CPU, headless Chrome | 127–152 ms (bench median 127 ms) | 2.07–2.15 s (bench median 2.08 s) |
+| **wasm WebGPU, headless Chrome** | **47–53 ms** (bench median 47.6 ms; round 1: 63 ms) | **171–195 ms** (bench median 168 ms; round 1: 263 ms; before the witness fix: 1.08 s) |
+| snarkjs 0.7.5 `fullProve`, same Chrome, default web workers (18), for reference | 39 ms | 603 ms (580 ms without COOP/COEP) |
 
-In-browser withdraw on WebGPU is now **2.2× faster than snarkjs with all 18 cores**. Commitment
-is not: it is a tiny circuit (n = 1 542), where GPU dispatch latency (~45–75 ms of waiting)
-dominates, so snarkjs's 40 ms beats our 63 ms. The bench rows ("bench median") are 10 proofs
-after 2 warm-ups (`bench/RESULTS.md`). The ranges are the 7 or 10 vectors.json cases from
-`make verify-webgpu-chrome`.
+In-browser withdraw on WebGPU is **3.6× faster than snarkjs using all 18 cores**. Commitment
+is still 1.2× behind (47.6 ms vs 39 ms): the CPU G2 MSM (~35–41 ms in wasm) is now its
+critical path. The bench rows ("bench median") are 10 proofs after 2 warm-ups
+(`bench/RESULTS.md`). The ranges are the 7 or 10 vectors.json cases from
+`make verify-webgpu-chrome`. Round-2 numbers were taken while other work was running on the
+host. snarkjs, whose code didn't change, was re-run in the same session as a control, and
+came out within 4 % of round 1.
 
 WebGPU withdraw in Chrome, per stage:
 
 | Stage | Time |
 |---|---|
-| witness (host WebAssembly engine) | 21–30 ms (was 463–919 ms with wasmi) |
-| CPU plan + submit of A/B/L | 11–13 ms |
-| H witness map (overlapped) | 176–181 ms |
-| wait for the GPU after that | 45–49 ms |
+| witness (host WebAssembly engine) | 21–30 ms (with wasmi: 463–919 ms) |
+| constraint evaluation (CPU) + QAP submit | 2–3 ms |
+| CPU plan + submit of A/B/L (the GPU runs the NTTs meanwhile) | 11–13 ms |
+| wait for the GPU QAP + read h | 2–9 ms (round 1: 176–181 ms of CPU FFTs) |
+| plan + submit H | 7–8 ms |
+| wait for the GPU MSMs | 101–142 ms |
 | assemble + self-check | 3–4 ms |
 
-Other wasm-path costs, checked while doing this:
+Tuning tried in round 2, measured in Chrome and **not adopted** (no measurable win, within
+noise):
+- `TASK_MAX` ∈ {8, 16, 32} × window bits ∈ {5…9} (`bench/tune-gpu.sh`).
+- Interleaving the MSM jobs' dispatches in one pass. This was slower: commitment 82 ms vs
+  65 ms, withdraw 220 ms vs 177 ms. Reverted.
 
-- zkey parse + `CircuitProver::load` takes 25–30 ms for withdraw and 9 ms for commitment
-  in Chrome. That is a one-time cost and was not worth changing.
+The GPU MSMs (about 90 ms of GPU time natively) are now the floor for withdraw.
+
+Other wasm-path costs:
+- zkey parse + `CircuitProver::load` takes 67–75 ms for withdraw and 11–48 ms for
+  commitment in Chrome, one time. That includes the sha256 pin (about 37 ms). The first
+  load in a page is slower because the hashing code is still cold in the JIT.
 - Witness compile is ~1 ms; instantiate per proof is ~0.1 ms.
 
 One-time setup:
 
 | | Native Metal | Chrome |
 |---|---|---|
-| `Gpu::new` (device + shader compile) | 17–38 ms with a warm Metal shader cache; 0.8–2.4 s the first time after a shader change | 30 ms (Chrome may compile lazily: the first proof ran ~30 ms slower than later ones) |
-| base upload, withdraw | 13–27 ms (38 MiB) | 25 ms |
+| `Gpu::new` (device + shader compile, MSM and QAP modules) | 17–38 ms with a warm Metal shader cache; 0.8–2.4 s the first time after a shader change | 46–75 ms in the bench (fresh profile); one cold run in the crate test took 600 ms |
+| base upload, withdraw (incl. 10 MiB of QAP tables since round 2) | 13–27 ms (38 MiB) | 40–45 ms |
 | base upload, commitment | 1–5 ms (1 MiB) | 2 ms |
 
 ### Verification
@@ -319,6 +373,7 @@ One-time setup:
 | snarkjs 0.7.5 verifies the native GPU proofs | `npx tsx verify-rust-proofs.ts out/gpu-proofs.json` | 17/17 |
 | Same as the first row, in headless Chrome WebGPU (wasm32, CPU and GPU proofs made in the same module) | `make verify-webgpu-chrome` (`tests/wasm_gpu.rs`) | 17/17 identical |
 | snarkjs 0.7.5 verifies the browser-made GPU proofs | (last step of the same target) | 17/17 |
+| GPU QAP (NTTs) == CPU witness map, element by element, n = 2 … 2^16, plus edge values | `../lowki-gpu/tests/qap.rs` (Metal) | pass |
 | No GPU (Linux VM) | `cargo test --features webgpu` | GPU tests print `SKIP` and pass |
 
 The existing checks were re-run after the change: `make test`, `make clippy`,
@@ -351,16 +406,18 @@ browser part ran on the macOS host and the snarkjs part on the Linux VM, because
   must copy that override.** Release builds and wasm32 (loop dispatch) are unaffected.
 - **No threads in the browser.** CPU wasm proving is single-threaded: about 2.05 s for
   withdraw in Chrome and ~2.2 s under Node. Threads would need COOP/COEP, which an embedded
-  iframe can't rely on. The `webgpu` feature (see above) is the answer: ~263 ms in Chrome.
-  The H witness map (FFTs, ~176 ms) is now the largest stage.
+  iframe can't rely on. The `webgpu` feature (see above) is the answer: ~168 ms in Chrome.
+  GPU MSM time is the floor now.
+- **G2 on the CPU for small circuits.** The threshold of 8 192 bases is a fixed constant
+  (`G2_ON_CPU_MAX`). It was measured at 1.5k bases (CPU wins) and 37k bases (GPU wins), and
+  not between.
 - **wasm32 witness engine.** The host engine was tested in Chrome 156 (main thread, under
   wasm-bindgen-test) and in Node 24. Safari and Firefox were not tested. If a browser refuses
   the synchronous compile in `load`, the witness silently falls back to wasmi: still correct,
   but about 30× slower. Check `witness_backend()`, or use `load_async`.
-- **zkey trust.** zkey G2 points are checked to be on the curve but not in the subgroup. A
-  malicious zkey can only produce proofs that fail the self-check or fail on-chain, not leak
-  secrets. Still, pin the artifact sha256 values above in the browser loader; that is not yet
-  enforced in code.
+- **zkey trust.** `load` enforces the sha256 pins, and `load_unpinned` subgroup-checks every
+  G2 point (see "zkey + proving"). The vkey and proof parsers check every point. What still
+  has to be trusted is the circuit itself: the pinned 1.0.5 release.
 - **Zeroization is best-effort.** Input structs zeroize on drop, `Debug` is redacted, the
   witness engine's linear memory (wasmi store or `WebAssembly.Memory`) and the witness `Vec` are zeroed, and the `r`/`s` blinding factors are
   zeroed. Temporaries inside `ark-groth16` (the h vector, bigint assignments) and any JS-side
