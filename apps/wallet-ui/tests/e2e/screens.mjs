@@ -74,7 +74,7 @@ try {
       if (filter && !name.includes(filter)) continue;
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          await b.go(W + "?" + q);
+          await b.go(W + "?backend=mock&" + q);
           await b.waitFor("#main h1");
           await b.exec("return document.fonts.ready.then(() => true)");
           await prep(b);
@@ -92,8 +92,9 @@ try {
     // Demo dapp with the wallet embedded, after sign-in, with a consent sheet open.
     if (!filter || "26-demo-dapp".includes(filter)) {
       try {
-        await b.go("http://127.0.0.1:8712/apps/demo-dapp/?wallet=" + encodeURIComponent(W) + "&walletflags=speed%3D0.05%26platform%3Dmac");
+        await b.go("http://127.0.0.1:8712/apps/demo-dapp/?wallet=" + encodeURIComponent(W) + "&walletflags=backend%3Dmock%26speed%3D0.05%26platform%3Dmac");
         await b.click("#signin");
+        await sleep(150); // sign_in re-renders the sheet; don't click the old button
         await b.frame("#wallet");
         await b.click('[data-test="google"]');
         await b.click('[data-test="create-passkey"]');

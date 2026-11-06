@@ -29,7 +29,7 @@ const { proc } = await startDriver(DRIVER);
 const b = await new Browser("http://127.0.0.1:9617").open();
 let ok = false;
 try {
-  await b.go("http://127.0.0.1:8712/apps/demo-dapp/?wallet=" + encodeURIComponent("http://127.0.0.1:8711/") + "&walletflags=platform%3Dmac");
+  await b.go("http://127.0.0.1:8712/apps/demo-dapp/?wallet=" + encodeURIComponent("http://127.0.0.1:8711/") + "&walletflags=backend%3Dmock%26platform%3Dmac");
 
   await step("dapp asks to sign in; wallet shows the sign-in sheet", async () => {
     await b.frame("#wallet");
