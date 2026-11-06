@@ -40,6 +40,7 @@ rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zeroize = "1.8"
+sha2 = "0.10"
 rayon = { version = "1", optional = true }
 lowki-gpu = { path = "../lowki-gpu", optional = true }
 

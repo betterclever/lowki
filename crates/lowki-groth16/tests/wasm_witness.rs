@@ -146,6 +146,14 @@ async fn webassembly_witness_equals_wasmi_and_snarkjs() {
         }
     }
     assert_eq!(n, 17);
+    // The escape hatch: no pin, every proving-key G2 point subgroup-checked (cost shown).
+    for (circuit, name) in [(Circuit::Commitment, "commitment"), (Circuit::Withdraw, "withdraw")] {
+        let (wasm, zkey) = calc(circuit);
+        let t = now();
+        let p = CircuitProver::load_async_unpinned(circuit, wasm, zkey).await.unwrap();
+        console_log!("LOWKI_SETUP {name}: load_async_unpinned (full G2 subgroup checks)={:.0}ms", now() - t);
+        assert_eq!(p.witness_backend(), "webassembly");
+    }
     console_log!("LOWKI_RESULT {n}/17 witnesses identical");
 }
 

@@ -532,6 +532,37 @@ impl Circuit {
     }
 }
 
+/// sha256 of the artifacts in `@fatsolutions/privacy-pools-core-circuits@1.0.5`
+/// (`artifacts/<circuit>.{wasm,zkey}`), which [`CircuitProver::load`] requires.
+pub const PINNED_SHA256: [(Circuit, &str, &str); 2] = [
+    (
+        Circuit::Commitment,
+        "254d2130607182fd6fd1aee67971526b13cfe178c88e360da96dce92663828d8",
+        "494ae92d64098fda2a5649690ddc5821fcd7449ca5fe8ef99ee7447544d7e1f3",
+    ),
+    (
+        Circuit::Withdraw,
+        "36cda22791def3d520a55c0fc808369cd5849532a75fab65686e666ed3d55c10",
+        "2a893b42174c813566e5c40c715a8b90cd49fc4ecf384e3a6024158c3d6de677",
+    ),
+];
+
+fn check_pinned(circuit: Circuit, wasm: &[u8], zkey: &[u8]) -> Result<(), Error> {
+    use sha2::{Digest, Sha256};
+    let (_, want_wasm, want_zkey) = PINNED_SHA256.iter().find(|(c, _, _)| *c == circuit).unwrap();
+    let name = format!("{circuit:?}").to_lowercase();
+    for (ext, bytes, want) in [("wasm", wasm, want_wasm), ("zkey", zkey, want_zkey)] {
+        let got: String = Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect();
+        if got != *want {
+            return Err(Error::Circuit(format!(
+                "{name}.{ext} has sha256 {got}, not the pinned {want} of \
+                 privacy-pools-core-circuits 1.0.5 (use load_unpinned for custom artifacts)"
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// A loaded circuit: witness generator + proving key. Build once, prove many times.
 pub struct CircuitProver {
     circuit: Circuit,
@@ -543,22 +574,38 @@ pub struct CircuitProver {
 
 impl CircuitProver {
     /// Load from artifact bytes (`<circuit>.wasm`, `<circuit>.zkey`), e.g. fetched by the browser.
+    /// Both must be the published 1.0.5 artifacts ([`PINNED_SHA256`]), else `Error::Circuit`.
     ///
     /// On wasm32 the witness `.wasm` is compiled synchronously by the host engine; on a browser
     /// main thread prefer [`CircuitProver::load_async`] (see [`WitnessCalculator::new`]).
     pub fn load(circuit: Circuit, wasm: &[u8], zkey: &[u8]) -> Result<Self, Error> {
-        Self::with_calc(circuit, WitnessCalculator::new(wasm)?, zkey)
+        check_pinned(circuit, wasm, zkey)?;
+        Self::with_calc(circuit, WitnessCalculator::new(wasm)?, zkey, false)
+    }
+
+    /// Escape hatch for tests and custom (e.g. re-generated) artifacts: no sha256 pin, so every
+    /// proving-key G2 point is subgroup-checked instead (slower load; see the README). Only use
+    /// it with artifacts you trust to match the on-chain verifier.
+    pub fn load_unpinned(circuit: Circuit, wasm: &[u8], zkey: &[u8]) -> Result<Self, Error> {
+        Self::with_calc(circuit, WitnessCalculator::new(wasm)?, zkey, true)
     }
 
     /// wasm32 only: like [`CircuitProver::load`], but compiles the witness `.wasm` with
     /// `WebAssembly.compile` (async; no main-thread size cap). The zkey parse is still synchronous.
     #[cfg(target_arch = "wasm32")]
     pub async fn load_async(circuit: Circuit, wasm: &[u8], zkey: &[u8]) -> Result<Self, Error> {
-        Self::with_calc(circuit, WitnessCalculator::new_async(wasm).await?, zkey)
+        check_pinned(circuit, wasm, zkey)?;
+        Self::with_calc(circuit, WitnessCalculator::new_async(wasm).await?, zkey, false)
     }
 
-    fn with_calc(circuit: Circuit, calc: WitnessCalculator, zkey: &[u8]) -> Result<Self, Error> {
-        let z = zkey::read_zkey(zkey)?;
+    /// wasm32 only: [`CircuitProver::load_unpinned`] with an async witness compile.
+    #[cfg(target_arch = "wasm32")]
+    pub async fn load_async_unpinned(circuit: Circuit, wasm: &[u8], zkey: &[u8]) -> Result<Self, Error> {
+        Self::with_calc(circuit, WitnessCalculator::new_async(wasm).await?, zkey, true)
+    }
+
+    fn with_calc(circuit: Circuit, calc: WitnessCalculator, zkey: &[u8], check_g2_query: bool) -> Result<Self, Error> {
+        let z = zkey::read_zkey(zkey, check_g2_query)?;
         if z.n_public != circuit.n_public() {
             return Err(Error::Circuit(format!(
                 "zkey has {} public signals, {circuit:?} has {}",
