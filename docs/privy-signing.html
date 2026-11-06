@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Privy Signs</title>
+<style>
+  /* Layout: single reading column; diagram scrolls sideways on narrow screens */
+  :root {
+    --bg: #f7f8fb; --surface: #ffffff; --fg: #1b1f2a; --muted: #5d6475; --line: #d9dde7;
+    --browser: #2f6fde; --api: #8a4bd6; --tee: #0f8a6a; --warn: #b4531a; --code-bg: #eef1f7;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11141b; --surface: #181c25; --fg: #e6e9f0; --muted: #9aa2b4; --line: #2c3240;
+      --browser: #6f9cff; --api: #b88cf5; --tee: #3fc79f; --warn: #f0975a; --code-bg: #212635; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans); }
+  main { max-width: 980px; margin: 0 auto; padding: 40px 16px 64px; display: grid; gap: 32px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 8px; text-wrap: balance; }
+  h2 { font-size: 19px; margin: 0 0 12px; }
+  p { margin: 0 0 10px; max-width: 70ch; }
+  .lede { color: var(--muted); font-size: 16px; }
+  code { font-family: var(--mono); font-size: 0.88em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+  .scroll { overflow-x: auto; }
+  svg text { font-family: var(--sans); }
+  ol.steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+  ol.steps li { max-width: 75ch; }
+  .tag { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; color: #fff; margin-right: 6px; }
+  .t-browser { background: var(--browser); } .t-api { background: var(--api); } .t-tee { background: var(--tee); }
+  table { border-collapse: collapse; width: 100%; min-width: 620px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  td:first-child { font-weight: 600; width: 22%; }
+  .callout { border-left: 4px solid var(--warn); padding: 14px 18px; background: var(--surface); border-radius: 0 10px 10px 0; }
+  .chain { display: grid; gap: 8px; font-family: var(--mono); font-size: 14px; }
+  .chain div span { color: var(--muted); display: inline-block; min-width: 90px; font-family: var(--sans); }
+  .sources { font-size: 13px; color: var(--muted); }
+  .sources a { color: var(--browser); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>How Privy signs (TEE mode, the default)</h1>
+    <p class="lede">The browser never holds the wallet key. It holds a short-lived P-256 <em>user key</em> that authorizes API requests. The secp256k1 wallet key is rebuilt from two shares inside Privy's AWS Nitro enclave, used once, and wiped.</p>
+  </header>
+
+  <section class="panel">
+    <h2>Sequence: <code>signMessage("hi")</code> from the React SDK</h2>
+    <div class="scroll">
+      <svg viewBox="0 0 920 640" width="920" role="img" aria-label="Sequence diagram of Privy signing">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/>
+          </marker>
+        </defs>
+        <!-- lane headers -->
+        <g font-size="14" font-weight="700" text-anchor="middle">
+          <rect x="40" y="10" width="180" height="40" rx="8" fill="var(--browser)"/>
+          <text x="130" y="35" fill="#fff">Browser (Privy SDK)</text>
+          <rect x="370" y="10" width="180" height="40" rx="8" fill="var(--api)"/>
+          <text x="460" y="35" fill="#fff">Privy API</text>
+          <rect x="700" y="10" width="180" height="40" rx="8" fill="var(--tee)"/>
+          <text x="790" y="35" fill="#fff">TEE (Nitro enclave)</text>
+        </g>
+        <!-- lifelines -->
+        <g stroke="var(--line)" stroke-width="2" stroke-dasharray="5 5">
+          <line x1="130" y1="50" x2="130" y2="630"/>
+          <line x1="460" y1="50" x2="460" y2="630"/>
+          <line x1="790" y1="50" x2="790" y2="630"/>
+        </g>
+        <g font-size="13" fill="var(--fg)">
+          <!-- 1 self browser -->
+          <rect x="20" y="70" width="220" height="44" rx="6" fill="var(--surface)" stroke="var(--browser)"/>
+          <text x="30" y="89" font-weight="700">1 · User logs in</text>
+          <text x="30" y="106" fill="var(--muted)">gets access token (JWT, 1 h)</text>
+
+          <!-- 2 browser -> api -->
+          <line x1="130" y1="148" x2="458" y2="148" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="145" y="140" font-weight="700">2 · JWT + my HPKE public key</text>
+          <text x="145" y="166" fill="var(--muted)">"give me a user key"</text>
+
+          <!-- 3 api -> browser -->
+          <line x1="460" y1="204" x2="132" y2="204" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="145" y="196" font-weight="700">3 · time-bound P-256 user key</text>
+          <text x="145" y="222" fill="var(--muted)">generated by Privy, encrypted to my key</text>
+
+          <!-- 4 self browser -->
+          <rect x="20" y="244" width="300" height="62" rx="6" fill="var(--surface)" stroke="var(--browser)"/>
+          <text x="30" y="263" font-weight="700">4 · Sign the API request</text>
+          <text x="30" y="280" fill="var(--muted)">{version, method, url, body, privy-* hdrs}</text>
+          <text x="30" y="297" fill="var(--muted)">RFC 8785 canonicalize → ECDSA P-256</text>
+
+          <!-- 5 browser -> api -->
+          <line x1="130" y1="340" x2="458" y2="340" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="145" y="332" font-weight="700">5 · POST /wallets/{id}/rpc</text>
+          <text x="145" y="358" fill="var(--muted)">+ privy-authorization-signature</text>
+
+          <!-- 6 api -> tee -->
+          <line x1="460" y1="392" x2="788" y2="392" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="475" y="384" font-weight="700">6 · request + signature</text>
+          <text x="475" y="410" fill="var(--muted)">+ encrypted auth share</text>
+
+          <!-- 7 self tee -->
+          <rect x="590" y="430" width="320" height="100" rx="6" fill="var(--surface)" stroke="var(--tee)"/>
+          <text x="600" y="449" font-weight="700">7 · Inside the enclave</text>
+          <text x="600" y="467" fill="var(--muted)">verify signature = wallet owner</text>
+          <text x="600" y="484" fill="var(--muted)">check wallet policies</text>
+          <text x="600" y="501" fill="var(--muted)">decrypt enclave share, combine 2-of-2</text>
+          <text x="600" y="518" fill="var(--muted)">secp256k1 sign → wipe key</text>
+
+          <!-- 8 tee -> api -->
+          <line x1="790" y1="560" x2="462" y2="560" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="475" y="552" font-weight="700">8 · signature</text>
+
+          <!-- 9 api -> browser -->
+          <line x1="460" y1="606" x2="132" y2="606" stroke="var(--muted)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="145" y="598" font-weight="700">9 · signature / tx hash</text>
+        </g>
+      </svg>
+    </div>
+  </section>
+
+  <section>
+    <h2>Step by step</h2>
+    <ol class="steps">
+      <li><span class="tag t-browser">Browser</span>User logs in (Google, email, …). Privy issues an access token: a JWT valid for 1 hour, renewed with a 30-day refresh token.</li>
+      <li><span class="tag t-browser">Browser</span>The SDK sends the JWT to Privy and asks for a <strong>user key</strong>.</li>
+      <li><span class="tag t-api">Privy API</span>Privy checks the JWT and returns a <strong>time-bound P-256 key it generated</strong>, encrypted to a keypair the requester created.</li>
+      <li><span class="tag t-browser">Browser</span>The SDK signs the API request itself (not the transaction): canonicalized JSON of method, URL, body and <code>privy-*</code> headers, signed with ECDSA P-256.</li>
+      <li><span class="tag t-browser">Browser</span>It calls the Privy API with that signature in the <code>privy-authorization-signature</code> header.</li>
+      <li><span class="tag t-api">Privy API</span>The API attaches the encrypted <strong>auth share</strong> and forwards everything to the enclave.</li>
+      <li><span class="tag t-tee">TEE</span>The enclave checks the signature belongs to the wallet's owner and that the policies allow the action, decrypts its <strong>enclave share</strong>, combines the 2-of-2 Shamir shares into the secp256k1 key, signs, and wipes the key.</li>
+      <li><span class="tag t-tee">TEE</span>The signature goes back to the API (Privy can also broadcast the transaction).</li>
+      <li><span class="tag t-api">Privy API</span>The browser receives the signature or transaction hash.</li>
+    </ol>
+  </section>
+
+  <section class="panel">
+    <h2>Privy vs Turnkey</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th></th><th>Turnkey</th><th>Privy</th></tr></thead>
+        <tbody>
+          <tr><td>Who creates the session key</td><td>The browser: a non-extractable P-256 key in IndexedDB. Turnkey only sees the public key.</td><td>Privy's servers create the user key and send it encrypted to the requester.</td></tr>
+          <tr><td>What it is bound to</td><td>That device or browser</td><td>The login JWT: anything holding a valid JWT can get a new one</td></tr>
+          <tr><td>What really controls the wallet</td><td>The registered credential (passkey, OTP-approved session key)</td><td>The JWT</td></tr>
+          <tr><td>Where the Ethereum key is used</td><td>Turnkey's enclave</td><td>Privy's enclave</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="callout">
+    <h2>Why this matters for Lowki</h2>
+    <p>Privy's Node SDK documents that an app's <strong>server</strong> can pass <code>authorization_context: { user_jwts: [jwt] }</code> and sign with the user's wallet. So in TEE mode, anything holding the user's access token can move their funds: the app's backend, an XSS that steals the token, or a stolen session. MFA is the only extra protection, and apps opt into it.</p>
+    <div class="chain">
+      <div><span>Privy</span>login token → user key → enclave signs</div>
+      <div><span>Turnkey</span>device credential → session key → enclave signs</div>
+      <div><span>Lowki</span>passkey → PRF → key decrypted in the Rust worker on your device</div>
+    </div>
+  </section>
+
+  <p class="lede">Not documented by Privy: where the client SDK keeps the user key between calls (iframe memory, storage, or fetched fresh). The docs only say the SDK "will fetch an ephemeral user signing key."</p>
+
+  <footer class="sources">
+    Sources:
+    <a href="https://docs.privy.io/controls/authorization-keys/using-owners/sign/signing-on-the-client">Signing on the client</a> ·
+    <a href="https://docs.privy.io/controls/authorization-keys/keys/create/user/request">Using user owners and signers</a> ·
+    <a href="https://docs.privy.io/controls/authorization-keys/keys/create/user/overview">User keys</a> ·
+    <a href="https://docs.privy.io/controls/authorization-keys/using-owners/sign/overview">Signing requests</a> ·
+    <a href="https://docs.privy.io/security/wallet-infrastructure/architecture">Wallet architecture</a>
+  </footer>
+</main>
+</body>
+</html>
