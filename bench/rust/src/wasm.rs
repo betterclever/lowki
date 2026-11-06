@@ -93,7 +93,7 @@ mod g16 {
         /// Opens WebGPU, loads the circuit and uploads its proving-key bases. Returns
         /// `[G16Gpu, open_ms, load_ms, upload_ms]`.
         #[wasm_bindgen]
-        pub async fn g16_gpu(circuit_name: String, wasm: Vec<u8>, zkey: Vec<u8>, input_json: String) -> Result<js_sys::Array, JsError> {
+        pub async fn g16_gpu(circuit_name: String, wasm: Vec<u8>, zkey: Vec<u8>, input_json: String, window_bits: u32) -> Result<js_sys::Array, JsError> {
             let now = || js_sys::Date::now();
             let t = now();
             let gpu = open_gpu().await.map_err(|e| JsError::new(&e.to_string()))?;
@@ -102,7 +102,10 @@ mod g16 {
             let cpu = CircuitProver::load(circuit(&circuit_name), &wasm, &zkey).unwrap();
             let t_load = now() - t;
             let t = now();
-            let gp = GpuProver::new(gpu, cpu).map_err(|e| JsError::new(&e.1.to_string()))?;
+            let mut gp = GpuProver::new(gpu, cpu).map_err(|e| JsError::new(&e.1.to_string()))?;
+            if window_bits != 0 {
+                gp.set_window_bits(window_bits); // tuning experiments only
+            }
             let t_up = now() - t;
             let out = js_sys::Array::new();
             out.push(&G16Gpu { p: Rc::new(gp), input: Rc::new(input_json) }.into());
@@ -112,4 +115,21 @@ mod g16 {
             Ok(out)
         }
     }
+}
+
+#[wasm_bindgen]
+pub fn fb_check() -> bool {
+    crate::fieldbench::check_mont32()
+}
+#[wasm_bindgen]
+pub fn fb_mul_ark(n: u32) -> String {
+    crate::fieldbench::mul_ark(n).to_string()
+}
+#[wasm_bindgen]
+pub fn fb_mul_32(n: u32) -> String {
+    crate::fieldbench::mul_32(n).to_string()
+}
+#[wasm_bindgen]
+pub fn fb_fft_ark(log_n: u32) -> String {
+    crate::fieldbench::fft_ark(log_n).to_string()
 }

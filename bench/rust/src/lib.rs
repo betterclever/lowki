@@ -6,6 +6,8 @@
 #[cfg(feature = "aa")]
 pub mod aa;
 #[cfg(not(feature = "size-only"))]
+pub mod fieldbench;
+#[cfg(not(feature = "size-only"))]
 pub mod cases;
 #[cfg(all(feature = "g16", not(feature = "size-only")))]
 pub mod g16;

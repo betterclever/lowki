@@ -22,7 +22,7 @@ pp = ["dep:lowki-pp-core"]
 stealth = ["dep:lowki-stealth"]
 aa = ["dep:lowki-aa"]
 g16 = ["dep:lowki-groth16"]
-webgpu = ["g16", "lowki-groth16/webgpu"]
+webgpu = ["g16", "lowki-groth16/webgpu", "dep:lowki-gpu"]
 parallel = ["g16", "lowki-groth16/parallel"]
 # Size probes: only export the API of one crate (see size/).
 size-only = []
@@ -33,7 +33,11 @@ lowki-pp-core = { path = "../../crates/lowki-pp-core", optional = true }
 lowki-stealth = { path = "../../crates/lowki-stealth", optional = true }
 lowki-aa = { path = "../../crates/lowki-aa", optional = true }
 lowki-groth16 = { path = "../../crates/lowki-groth16", optional = true }
+lowki-gpu = { path = "../../crates/lowki-gpu", optional = true }
 ark-ff = { version = "0.5", default-features = false }
+ark-bn254 = { version = "0.5", default-features = false, features = ["scalar_field"] }
+ark-poly = { version = "0.5", default-features = false }
+ark-std = { version = "0.5", default-features = false }
 serde_json = "1"
 hex = "0.4"
 

@@ -50,7 +50,7 @@ const chrome = spawn(CHROME, [
   "--headless=new", "--enable-unsafe-webgpu", "--enable-features=WebGPU", "--ignore-gpu-blocklist",
   "--no-first-run", "--no-default-browser-check", "--disable-background-timer-throttling",
   "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows",
-  `--user-data-dir=${profile}`, `http://127.0.0.1:${port}/${process.env.PAGE ?? "index.html"}?suite=${suite}&iters=${iters}`,
+  `--user-data-dir=${profile}`, `http://127.0.0.1:${port}/${process.env.PAGE ?? "index.html"}?suite=${suite}&iters=${iters}${process.env.QS ?? ""}`,
 ], { stdio: ["ignore", "ignore", "pipe"] });
 chrome.stderr.on("data", () => {});
 const timeout = setTimeout(() => done(JSON.stringify({ suite, fatal: "timeout" })), 45 * 60 * 1000);

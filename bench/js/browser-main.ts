@@ -50,6 +50,19 @@ async function main() {
       const iters = mb.iters(i) || undefined;
       results.push(await runCase({ id: mb.id(i), batch: mb.batch(i), iters, warmup: iters ? 2 : undefined, run: () => mb.run(i), check: () => mb.check(i) }, log));
     }
+  } else if (suite === "fieldbench") {
+    const m: any = await import("./pkg/lowki_bench.js");
+    await m.default();
+    const ok = m.fb_check();
+    const N = 2_000_000;
+    const out: Record<string, unknown> = { mont32_equals_ark: ok };
+    const t = (f: () => unknown) => { f(); const s: number[] = []; for (let i = 0; i < 7; i++) { const t0 = performance.now(); f(); s.push(performance.now() - t0); } return stats(s, 1).median_ms; };
+    out.ark_mul_ns = (t(() => m.fb_mul_ark(N)) / N) * 1e6;
+    out.mont32_mul_ns = (t(() => m.fb_mul_32(N)) / N) * 1e6;
+    out.same_result = m.fb_mul_ark(1000) === m.fb_mul_32(1000);
+    out.ark_fft_2_16_ms = t(() => m.fb_fft_ark(16));
+    log(JSON.stringify(out));
+    results.push({ id: "fieldbench", batch: 1, n: 7, warmup: 1, median_ms: 0, p90_ms: 0, min_ms: 0, mean_ms: 0, extra: out });
   } else if (suite.startsWith("g16-")) {
     const F = await fixtures(["g16"]);
     for (const name of ["commitment", "withdraw"]) {
@@ -73,7 +86,8 @@ async function main() {
           extra = { load_ms: load, witness: stats(wit, 1), witness_backend: p.backend() };
           prove = () => p.prove();
         } else {
-          const [p, open, load, upload] = await m.g16_gpu(name, art.wasm, art.zkey, inputJson);
+          const c = Number(new URLSearchParams(location.search).get("c") ?? 0);
+          const [p, open, load, upload] = await m.g16_gpu(name, art.wasm, art.zkey, inputJson, c);
           id = `g16.${name}.wasm_webgpu`;
           extra = { gpu_open_ms: open, load_ms: load, upload_ms: upload };
           prove = () => p.prove();
