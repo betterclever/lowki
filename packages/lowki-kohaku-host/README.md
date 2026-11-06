@@ -35,6 +35,9 @@ npx tsx --import ./resolve-hook.mjs scripts/sepolia-sync.ts   # read-only Sepoli
 | `scripts/sepolia-sync.ts` | Read-only Sepolia run |
 | `src/prover.ts` | `lowkiProverFactory`: Kohaku `proverFactory` on the worker's `ppProveWithdraw` / `ppProveCommitment` (lowki-groth16), with a public-signal cross-check |
 | `scripts/fork-private-send.ts` | Shield → ASP → sync → prove → relay → checks → ragequit on an anvil Sepolia fork (run via `../../scripts/fork-private-send.sh`; see `docs/PRIVATE-SEND.md`) |
+| `src/private-wallet.ts` | `LowkiPrivateWallet`: shield (Kohaku == worker `ppShield`), wait for ASP approval, private withdraw through Kohaku's relayer client, HTTP `IAspService`; used by the wallet UI |
+| `browser-wallet/` | The wallet UI glue (`entry.ts`: Anon-RPC connect/rpc/status; lazy `private.ts`); `node browser-wallet/build.mjs` → `dist/`, copied to the wallet's `lowki-glue/` |
+| `demo/stack.ts` | Demo stack gateway (fork RPC proxy with access log, ASP, relayer) + static servers; run by `../../scripts/demo-stack.sh` |
 | `scripts/asp-from-chain-probe.ts` | Checks whether Sepolia ASP roots equal a LeanIMT of on-chain deposit labels (only the first 20 of 802 do) |
 | `scripts/pp-sepolia.ts` | Live Sepolia runbook (`status`/`fund`/`shield`/`ragequit`/`withdraw`), dry run unless `BROADCAST=1`; also runs against a fork |
 | `test/stub-worker.ts` | **TEST-ONLY** JS stub of the worker (keys in JS). Never ship. |
