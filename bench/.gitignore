@@ -1,0 +1,9 @@
+# Build outputs and generated data; recreate with ./run-all.sh
+dist/
+fixtures/
+web/pkg/
+web/app.js
+web/limt-worker.js
+size/out/
+size/wasm/
+run.log

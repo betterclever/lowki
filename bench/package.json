@@ -1,0 +1,22 @@
+{
+  "name": "lowki-bench",
+  "private": true,
+  "type": "module",
+  "description": "Lowki Rust crates vs the TypeScript libraries they reimplement (Kohaku @ 8c83d640, ScopeLift SDK, snarkjs). Host (macOS) only: node_modules here hold macOS binaries.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "2.2.0",
+    "@noble/secp256k1": "2.3.0",
+    "@scopelift/stealth-address-sdk": "1.0.0-beta.5",
+    "@scure/bip32": "2.2.0",
+    "@scure/bip39": "2.2.0",
+    "maci-crypto": "2.5.0",
+    "ox": "0.12.4",
+    "snarkjs": "0.7.5",
+    "viem": "2.54.1",
+    "esbuild": "0.25.12"
+  }
+}
