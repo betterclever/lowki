@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lowki PRF spike</title>
+</head>
+<body>
+<h1>Lowki passkey-PRF spike</h1>
+<p>Status: <span id="status">loading</span></p>
+<pre id="result"></pre>
+<script type="module">
+import init, { derive_kek, wrap_entropy, unwrap_entropy } from "./pkg/lowki_prf_spike.js";
+
+const enc = new TextEncoder();
+const hex = (b) => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, "0")).join("");
+const rand = (n) => crypto.getRandomValues(new Uint8Array(n));
+const eq = (a, b) => hex(a) === hex(b);
+const statusEl = document.getElementById("status");
+
+// rp.id: default is the page's hostname ("localhost"); override with ?rpId=... or ?rpId= (omit).
+const params = new URLSearchParams(location.search);
+const rpIdParam = params.has("rpId") ? params.get("rpId") : location.hostname;
+const rpId = rpIdParam === "" ? undefined : rpIdParam;
+
+async function assertPrf(salt, credId) {
+  const pk = {
+    challenge: rand(32),
+    userVerification: "required",
+    timeout: 30000,
+    extensions: { prf: { eval: { first: salt } } },
+  };
+  if (rpId !== undefined) pk.rpId = rpId;
+  // credId == null -> discoverable (no allowCredentials), like a real "unlock on a new device".
+  if (credId) pk.allowCredentials = [{ type: "public-key", id: credId }];
+  const a = await navigator.credentials.get({ publicKey: pk });
+  const ext = a.getClientExtensionResults();
+  const first = ext.prf?.results?.first;
+  if (!first) throw new Error("assertion had no prf.results.first: " + JSON.stringify(Object.keys(ext.prf ?? {})));
+  return { id: new Uint8Array(a.rawId), prf: new Uint8Array(first), uv: (new Uint8Array(a.response.authenticatorData)[32] & 0x04) !== 0 };
+}
+
+// Independent WebCrypto implementation of the same scheme, to cross-check the wasm blob.
+async function webcryptoUnwrap(prf, blob) {
+  const ikm = await crypto.subtle.importKey("raw", prf, "HKDF", false, ["deriveKey", "deriveBits"]);
+  const kekBits = await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: enc.encode("lowki/kek/v1") }, ikm, 256);
+  const kek = await crypto.subtle.importKey("raw", kekBits, "AES-GCM", false, ["decrypt"]);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: blob.slice(1, 13), additionalData: enc.encode("lowki/seed/v1") }, kek, blob.slice(13));
+  return { kek: new Uint8Array(kekBits), pt: new Uint8Array(pt) };
+}
+
+async function run() {
+  const r = { ok: false, checks: {}, info: {} };
+  const check = (name, cond) => { r.checks[name] = !!cond; };
+  try {
+    r.info.userAgent = navigator.userAgent;
+    r.info.isSecureContext = window.isSecureContext;
+    r.info.origin = location.origin;
+    r.info.rpId = rpId ?? "(omitted)";
+    if (PublicKeyCredential.getClientCapabilities) {
+      const caps = await PublicKeyCredential.getClientCapabilities();
+      r.info.clientCapabilities = Object.fromEntries(Object.entries(caps).filter(([k]) => /prf|passkeyPlatform|userVerifying|hybrid|conditional/.test(k)));
+    }
+    r.info.uvpaa = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+
+    await init();
+    statusEl.textContent = "creating credential";
+
+    // (a) create with prf: {}
+    const rp = { name: "Lowki PRF spike" };
+    if (rpId !== undefined) rp.id = rpId;
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        rp,
+        user: { id: rand(16), name: "spike@lowki", displayName: "Lowki spike" },
+        challenge: rand(32),
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+        authenticatorSelection: { residentKey: "required", requireResidentKey: true, userVerification: "required" },
+        attestation: "none",
+        timeout: 30000,
+        // ?createPrf=0 leaves prf out of create(); ?evalAtCreate=1 asks for a PRF output at create time.
+        extensions: params.get("createPrf") === "0" ? { credProps: true }
+          : params.get("evalAtCreate") === "1" ? { prf: { eval: { first: rand(32) } }, credProps: true }
+          : { prf: {}, credProps: true },
+      },
+    });
+    const cext = cred.getClientExtensionResults();
+    r.info.createExtensions = {
+      prf: cext.prf && { enabled: cext.prf.enabled, resultsFirstLen: cext.prf.results?.first?.byteLength },
+      credProps: cext.credProps,
+    };
+    if (params.get("createPrf") !== "0") check("a_prf_enabled", cext.prf?.enabled === true);
+    const credId = new Uint8Array(cred.rawId);
+
+    // (b) determinism
+    statusEl.textContent = "assertions";
+    const salt = rand(32);
+    const otherSalt = rand(32);
+    const a1 = await assertPrf(salt, credId);
+    const a2 = await assertPrf(salt, credId);
+    const a3 = await assertPrf(otherSalt, credId);
+    check("b_prf_32_bytes", a1.prf.length === 32);
+    check("b_same_salt_same_output", eq(a1.prf, a2.prf));
+    check("b_diff_salt_diff_output", !eq(a1.prf, a3.prf));
+    check("b_uv_flag_set", a1.uv && a2.uv && a3.uv);
+    r.info.prfSameSaltPrefix = hex(a1.prf).slice(0, 16) + "…";
+
+    // (c) wrap with a1's PRF, unwrap with a fresh *discoverable* assertion's PRF
+    const entropy = rand(32);
+    const nonce = rand(12);
+    const blob = wrap_entropy(a1.prf, entropy, nonce);
+    check("c_blob_61_bytes", blob.length === 61 && blob[0] === 1 && eq(blob.slice(1, 13), nonce));
+    const a4 = await assertPrf(salt, null);
+    check("c_discoverable_same_credential", eq(a4.id, credId));
+    check("c_fresh_assertion_same_prf", eq(a4.prf, a1.prf));
+    const back = unwrap_entropy(a4.prf, blob);
+    check("c_roundtrip", eq(back, entropy));
+
+    let wrongErr = null;
+    try { unwrap_entropy(a3.prf, blob); } catch (e) { wrongErr = String(e.message ?? e); }
+    r.info.wrongSaltError = wrongErr;
+    check("c_wrong_salt_fails", wrongErr !== null && wrongErr.startsWith("Decrypt"));
+
+    // Cross-check with WebCrypto (the scheme is meant to be byte-compatible).
+    const wc = await webcryptoUnwrap(a4.prf, blob);
+    check("x_webcrypto_kek_matches", eq(wc.kek, derive_kek(a4.prf)));
+    check("x_webcrypto_unwraps_wasm_blob", eq(wc.pt, entropy));
+
+    r.ok = Object.values(r.checks).every(Boolean);
+  } catch (e) {
+    r.error = `${e?.name ?? "Error"}: ${e?.message ?? e}`;
+  }
+  window.__PRF_RESULT = r;
+  statusEl.textContent = r.ok ? "PASS" : "FAIL";
+  document.getElementById("result").textContent = JSON.stringify(r, null, 2);
+  return r;
+}
+
+window.runSpike = run;
+window.__PRF_READY = true;
+if (params.has("auto")) run();
+</script>
+</body>
+</html>

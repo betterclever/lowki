@@ -1,0 +1,19 @@
+[package]
+name = "lowki-prf-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Spike: passkey PRF -> lowki-keys seed wrapping, in the browser"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+lowki-keys = { path = "../../../crates/lowki-keys" }
+wasm-bindgen = "=0.2.130"
+
+[profile.release]
+opt-level = "s"
+lto = true

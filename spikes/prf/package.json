@@ -1,0 +1,8 @@
+{
+  "name": "lowki-prf-spike",
+  "private": true,
+  "type": "module",
+  "description": "Passkey PRF spike: no npm dependencies; the driver uses Node's built-in WebSocket + fetch to speak raw CDP.",
+  "engines": { "node": ">=22.4" },
+  "scripts": { "drive": "node drive.mjs", "serve": "node serve.mjs" }
+}
