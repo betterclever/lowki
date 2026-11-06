@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<title>Game X · Lowki demo</title>
+<!-- Serve from the repo root: tokens and fonts are shared with the wallet, nothing third-party. -->
+<link rel="stylesheet" href="../../design/tokens.css" />
+<link rel="icon" href="../../design/logo/favicon.svg" />
+<style>
+  @font-face { font-family: "Bricolage Grotesque"; src: url("../wallet-ui/assets/fonts/bricolage-grotesque-latin-700-normal.woff2") format("woff2"); font-weight: 700; }
+  @font-face { font-family: "Instrument Sans"; src: url("../wallet-ui/assets/fonts/instrument-sans-latin-400-normal.woff2") format("woff2"); font-weight: 400; }
+  @font-face { font-family: "Instrument Sans"; src: url("../wallet-ui/assets/fonts/instrument-sans-latin-600-normal.woff2") format("woff2"); font-weight: 600; }
+  @font-face { font-family: "IBM Plex Mono"; src: url("../wallet-ui/assets/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--lk-bg); color: var(--lk-text); font: 400 15px/1.5 var(--lk-font-text); }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 16px 24px; border-bottom: var(--lk-border); background: var(--lk-surface); }
+  header b { font: 700 20px var(--lk-font-display); letter-spacing: -0.01em; }
+  header span { color: var(--lk-text-muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 24px; padding: 24px; max-width: 1200px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  .panel { background: var(--lk-surface); border: var(--lk-border); border-radius: var(--lk-radius-lg); padding: 20px; min-width: 0; }
+  h2 { font-size: 12px; margin: 0 0 10px; color: var(--lk-text-muted); text-transform: uppercase; letter-spacing: var(--lk-tracking-label); font-weight: 600; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  button { font: 600 14px var(--lk-font-text); min-height: 40px; padding: 0 14px; border-radius: var(--lk-radius-md); border: 1px solid var(--lk-line-strong); background: var(--lk-surface); color: var(--lk-text); cursor: pointer; }
+  button:hover { background: var(--lk-surface-2); }
+  button.primary { background: var(--lk-lime); color: var(--lk-on-lime); border-color: var(--lk-lime); }
+  button.primary:hover { background: var(--lk-lime-hover); }
+  button:focus-visible { outline: 2px solid var(--lk-focus); outline-offset: 2px; }
+  dl { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px 12px; margin: 0 0 20px; font-size: 14px; }
+  @media (max-width: 500px) { dl { grid-template-columns: 1fr; gap: 2px; } dd { margin-bottom: 8px !important; } }
+  dt { color: var(--lk-text-muted); }
+  dd { margin: 0; font: 13px var(--lk-font-mono); overflow-wrap: anywhere; }
+  #log { font: 12px/1.5 var(--lk-font-mono); max-height: 360px; overflow: auto; margin: 0; padding: 0; list-style: none; }
+  #log li { padding: 8px 0; border-top: var(--lk-border); white-space: pre-wrap; overflow-wrap: anywhere; }
+  #log .dir { color: var(--lk-accent-text); font-weight: 600; }
+  iframe { width: 100%; height: 860px; border: 0; border-radius: var(--lk-radius-lg); background: transparent; display: block; }
+</style>
+</head>
+<body>
+<header><b>Game X</b><span>Demo app that embeds the Lowki wallet</span></header>
+<main>
+  <section class="panel">
+    <h2>Actions</h2>
+    <div class="buttons">
+      <button id="signin" class="primary">Sign in</button>
+      <button id="sign">Sign message</button>
+      <button id="typed">Sign typed data</button>
+      <button id="send">Send transaction</button>
+      <button id="delegate">Request delegation</button>
+      <button id="baddelegate">Request unlimited delegation</button>
+      <button id="signout">Sign out</button>
+    </div>
+    <h2>What Game X knows</h2>
+    <dl>
+      <dt>Address</dt><dd id="address">not signed in</dd>
+      <dt>Pairwise user ID</dt><dd id="userid">-</dd>
+      <dt>Access token</dt><dd id="token">-</dd>
+    </dl>
+    <h2>postMessage events</h2>
+    <ul id="log" aria-live="polite"></ul>
+  </section>
+  <section>
+    <iframe id="wallet" title="Lowki wallet" allow="publickey-credentials-get *; publickey-credentials-create *; clipboard-write"></iframe>
+  </section>
+</main>
+<script>
+  // Wallet location: ?wallet=http://127.0.0.1:8080/ (defaults to trunk serve).
+  const params = new URLSearchParams(location.search);
+  const root = document.documentElement;
+  const theme = params.get("theme");
+  if (theme === "light" || theme === "dark") root.dataset.theme = theme;
+  const WALLET = new URL(params.get("wallet") || "http://127.0.0.1:8080/");
+  const extra = params.get("walletflags") || "";
+  const frame = document.getElementById("wallet");
+  frame.src = WALLET.href + "?app=game-x&embed=1" + (root.dataset.theme ? "&theme=" + root.dataset.theme : "") + "&origin=" + encodeURIComponent(location.origin) + (extra ? "&" + extra : "");
+
+  const log = (dir, msg) => {
+    const li = document.createElement("li");
+    li.innerHTML = '<span class="dir"></span> ';
+    li.firstChild.textContent = dir;
+    li.append(JSON.stringify(msg));
+    document.getElementById("log").prepend(li);
+  };
+  let n = 0;
+  const send = (type, fields = {}) => {
+    const msg = { lowki: 1, type, id: "req-" + ++n, ...fields };
+    log("→", msg);
+    frame.contentWindow.postMessage(msg, WALLET.origin);
+  };
+
+  window.addEventListener("message", (ev) => {
+    if (ev.origin !== WALLET.origin || !ev.data || ev.data.lowki !== 1) return;
+    const m = ev.data;
+    log("←", m);
+    if (m.type === "authenticated") {
+      document.getElementById("address").textContent = m.address;
+      document.getElementById("userid").textContent = m.user_id;
+      document.getElementById("token").textContent = m.access_token;
+    }
+    if (m.type === "signed_out") {
+      for (const id of ["address", "userid", "token"]) document.getElementById(id).textContent = "-";
+    }
+  });
+
+  const policy = (max) => ({
+    chain: "monad", expires: "2026-12-31",
+    rules: [{ kind: "swap", router: "0x7a250d5630b4cf539739df2c5dacb4c659f2488d", token: "USDC", max_per_day: max }],
+  });
+  const USDC = "0x1b9a6d097952319636b6dbd3dda644ff6206bbc2";   // mock token registry
+  const MARKET = "0x6d3431dd87ae13b3939d1edd0bfe852fa586ec3d";
+
+  document.getElementById("signin").onclick = () => send("sign_in");
+  document.getElementById("signout").onclick = () => send("sign_out");
+  document.getElementById("sign").onclick = () => send("sign_message", {
+    message: "Game X wants you to sign in with your account.\n\nURI: " + location.origin + "\nNonce: " + Math.random().toString(16).slice(2, 12),
+  });
+  document.getElementById("typed").onclick = () => send("sign_typed_data", { typed_data: {
+    domain: { name: "Game X Market", version: "1", chainId: 10143, verifyingContract: MARKET },
+    primaryType: "Order",
+    types: {
+      Order: [{ name: "item", type: "Item" }, { name: "currency", type: "address" }, { name: "price", type: "uint256" }, { name: "seller", type: "address" }],
+      Item: [{ name: "name", type: "string" }, { name: "tokenId", type: "uint256" }],
+    },
+    message: { item: { name: "Iron Sword", tokenId: "2041" }, currency: USDC, price: "12500000", seller: "0x4b0897b0513fdc7c541b6d9d7e929c4e5364d2db" },
+  }});
+  document.getElementById("send").onclick = () => send("send_transaction", { tx: {
+    to: MARKET, value: "0", data: "0x6a2c4e1b00000000000000000000000000000000000000000000000000000000000007f9",
+  }});
+  document.getElementById("delegate").onclick = () => send("request_delegation", { policy: policy("50") });
+  document.getElementById("baddelegate").onclick = () => send("request_delegation", { policy: policy("unlimited") });
+</script>
+</body>
+</html>
