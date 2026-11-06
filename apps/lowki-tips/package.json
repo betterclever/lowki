@@ -1,0 +1,31 @@
+{
+  "name": "lowki-tips",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Lowki Tips: a hackathon demo app written for Privy, running on Lowki by changing one import.",
+  "scripts": {
+    "build:sdk": "npm --prefix ../../packages/lowki-react-auth run build",
+    "dev": "vite",
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "e2e": "node e2e/run.mjs"
+  },
+  "dependencies": {
+    "@lowki/react-auth": "file:../../packages/lowki-react-auth",
+    "@noble/curves": "1.9.1",
+    "@noble/hashes": "1.8.0",
+    "@scure/bip32": "1.7.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "viem": "2.57.16"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "typescript": "5.9.3",
+    "vite": "8.3.6"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "_comment": "Live Sepolia target. Fill every null (see README, 'Point it at live Sepolia'); the app refuses to start while any is null.",
+  "target": "sepolia",
+  "chain": {
+    "id": 11155111,
+    "name": "Sepolia",
+    "rpcUrl": null,
+    "explorerTxUrl": "https://sepolia.etherscan.io/tx/"
+  },
+  "ens": {
+    "universalResolver": "0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe",
+    "stealthResolver": null,
+    "parentName": "lowki.eth",
+    "gatewayUrl": null,
+    "recordsUrl": null
+  },
+  "lowki": {
+    "appId": null,
+    "walletUrl": null
+  },
+  "tip": { "amountEth": "0.01" },
+  "creators": [
+    { "label": "chai", "displayName": "Chai Stories", "tagline": "Long reads, one cup at a time", "hue": 22 },
+    { "label": "tabla", "displayName": "Tabla Tuesdays", "tagline": "Weekly rhythm lessons, live", "hue": 280 },
+    { "label": "pixel", "displayName": "Pixel Pandit", "tagline": "Hand-made pixel art and tiny games", "hue": 190 }
+  ],
+  "demo": null
+}
