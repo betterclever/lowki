@@ -1,0 +1,32 @@
+[
+ {
+  "id": "g16.commitment.native_1t.cpu",
+  "verified_snarkjs": true,
+  "signals_match_fixture": true
+ },
+ {
+  "id": "g16.commitment.native.metal",
+  "verified_snarkjs": true,
+  "signals_match_fixture": true
+ },
+ {
+  "id": "g16.withdraw.native_1t.cpu",
+  "verified_snarkjs": true,
+  "signals_match_fixture": true
+ },
+ {
+  "id": "g16.withdraw.native.metal",
+  "verified_snarkjs": true,
+  "signals_match_fixture": true
+ },
+ {
+  "id": "g16.commitment.native_par.cpu",
+  "verified_snarkjs": true,
+  "signals_match_fixture": true
+ },
+ {
+  "id": "g16.withdraw.native_par.cpu",
+  "verified_snarkjs": true,
+  "signals_match_fixture": true
+ }
+]

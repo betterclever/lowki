@@ -1,0 +1,16 @@
+{
+ "suite": "probe-sync-compile",
+ "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+ "results": {
+  "commitment.main.syncModule": "ok 1.2ms",
+  "commitment.main.syncInstance": "ok 0.3ms",
+  "commitment.main.asyncCompile": "ok 1.3ms",
+  "commitment.main.syncInstanceOfAsyncModule": "ok 0.1ms",
+  "withdraw.main.syncModule": "ok 0.9ms",
+  "withdraw.main.syncInstance": "ok 0.2ms",
+  "withdraw.main.asyncCompile": "ok 0.9ms",
+  "withdraw.main.syncInstanceOfAsyncModule": "ok 0.1ms",
+  "commitment.worker.sync": "ok 1.0ms",
+  "withdraw.worker.sync": "ok 0.9ms"
+ }
+}
