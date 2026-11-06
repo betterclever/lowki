@@ -1,0 +1,20 @@
+{
+  "name": "lowki-pp-core-vectors",
+  "private": true,
+  "type": "module",
+  "description": "Differential test vectors for crates/lowki-pp-core, generated from the pinned Kohaku sources",
+  "scripts": {
+    "gen": "node --import ./resolve-hook.mjs --import tsx gen.ts"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.2.0",
+    "@scure/bip32": "2.2.0",
+    "@scure/bip39": "2.2.0",
+    "@zk-kit/lean-imt": "2.2.4",
+    "maci-crypto": "2.5.0",
+    "ox": "0.12.4",
+    "viem": "2.54.1",
+    "tsx": "4.22.5",
+    "typescript": "5.9.3"
+  }
+}
