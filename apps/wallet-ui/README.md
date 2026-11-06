@@ -1,6 +1,6 @@
 # Lowki wallet UI
 
-The wallet app that runs inside the Lowki iframe or popup. It is written in Rust with Leptos 0.8 (client-side rendering) and built with trunk. The backend is mocked behind two traits, so the real Rust worker and server can plug in without touching any screen.
+The wallet app that runs inside the Lowki iframe or popup. It is written in Rust with Leptos 0.8 (client-side rendering) and built with trunk. The screens talk to two traits. The **real** backend (the default) runs lowki-worker in a Web Worker and calls lowki-server; the **mock** (`?backend=mock`) keeps screenshots, deep links and the dev panel working.
 
 `apps/demo-dapp/` is a single static page that embeds this wallet and drives it over postMessage.
 
@@ -22,8 +22,43 @@ The toolchain is pinned by the repo's `rust-toolchain.toml` (1.98.1, `wasm32-unk
 
 ```sh
 python3 -m http.server 8090            # from the repo root
-open "http://127.0.0.1:8090/apps/demo-dapp/?wallet=http://127.0.0.1:8080/"
+open "http://localhost:8090/apps/demo-dapp/?wallet=http://localhost:8080/&walletflags=backend%3Dmock"
 ```
+
+## Run it with the real backend
+
+```sh
+(cd crates/lowki-worker && make pkg)   # once: builds pkg/web, which trunk copies into dist/
+apps/wallet-ui/scripts/dev.sh          # lowki-server :8787 + demo dapp :8090/:8091 + trunk serve :8080
+```
+
+`dev.sh` prints one URL per demo app, for example
+`http://localhost:8090/apps/demo-dapp/?wallet=http://localhost:8080/&app=app_…&app_name=Game%20X`.
+Email codes are printed in the same terminal (`[lowki dev] email sign-in code for …`).
+
+What the scripts set up:
+
+- `scripts/dev-server.sh` runs lowki-server with `LOWKI_DEV_MODE=true` on port 8787: codes are logged,
+  the Lowki origin (`LOWKI_ORIGINS`) is the wallet (`http://localhost:8080`) and the passkey RP ID is
+  `localhost`. State (SQLite, a stable dev secret, the admin token) lives in `target/wallet-ui-dev/`.
+  It registers one app per demo dapp origin, **Game X** (`http://localhost:8090`) and **Pixel Market**
+  (`http://localhost:8091`), and writes their IDs to `target/wallet-ui-dev/apps.json`.
+  Env: `PORT`, `WALLET_ORIGIN`, `DAPP_ORIGINS`, `STATE`, `LOWKI_SERVER_BIN`.
+- lowki-server's cookie API has no CORS, so the wallet calls it **same-origin**: `Trunk.toml` proxies
+  `/v1/` to `localhost:8787`. In production, serve the wallet and lowki-server under one host
+  (e.g. `wallet.lowki.money`, which is then also the RP ID), or build with `LOWKI_SERVER_URL`.
+- Use `localhost`, not `127.0.0.1`: WebAuthn refuses IP hosts. The wallet and the dapps are then
+  same-site, so the session cookie (`SameSite=Lax`) reaches the iframe. A wallet on another site
+  needs `LOWKI_COOKIE_SAMESITE=none` (+ `LOWKI_COOKIE_PARTITIONED=true`) and https.
+
+Build-time settings (never URL flags, since the embedding app controls the URL):
+
+| Env | Default | Meaning |
+|---|---|---|
+| `LOWKI_SERVER_URL` | empty (same origin) | lowki-server base URL |
+| `LOWKI_RPC_URL` | `https://ethereum-sepolia-rpc.publicnode.com` | JSON-RPC for balances and broadcasting; also allow it in `index.html`'s CSP `connect-src` |
+| `LOWKI_CHAIN_ID`, `LOWKI_NETWORK` | `11155111`, `Sepolia` | chain of that RPC |
+| feature `mock-default` | off | make `backend=mock` the default |
 
 **Useful URL flags** (they live in `src/dev.rs`):
 
@@ -41,6 +76,9 @@ open "http://127.0.0.1:8090/apps/demo-dapp/?wallet=http://127.0.0.1:8080/"
 | `app=` | The embedding app's id (`game-x`, `pixel-market`, `kingside`) |
 | `origin=` | The parent origin to accept messages from and reply to |
 | `embed=1` | Transparent backdrop, for iframes |
+| `backend=` | `real` (default) or `mock`. `screen=` deep links imply `mock` |
+| `google=` | `1` shows "Continue with Google" with the real backend (it has no Google yet); `0` hides it with the mock |
+| `app_name=` | Name shown for the embedding app (with the real backend, `app=` is the lowki-server app ID) |
 
 ## Screens
 
@@ -84,7 +122,9 @@ let mock = backend::mock::new_shared();   // swap for the real worker client
 backend::install(mock);
 ```
 
-Errors are a closed `WalletError` enum. `state::Ctx::fail` routes `PasskeyCancelled`, `PrfUnsupported`, `Network` and `PolicyRejected` to full-screen states. Field-level errors such as `InvalidCode`, `InsufficientFunds` and `InvalidAddress` show inline.
+`recover_with_code` (lost passkey: email sign-in, then the recovery code) was added to `AuthBackend`; the next `create_passkey` wraps the same seed for a new passkey.
+
+Errors are a closed `WalletError` enum (`Other(String)` carries any other user-facing sentence, shown inline). `state::Ctx::fail` routes `PasskeyCancelled`, `PrfUnsupported`, `Network` and `PolicyRejected` to full-screen states. Field-level errors such as `InvalidCode`, `InsufficientFunds` and `InvalidAddress` show inline.
 
 ## postMessage protocol
 
@@ -120,7 +160,29 @@ App requests carry an `id`, and the wallet's answer echoes it. The wallet posts 
 | `rejected` | `id`, `reason`: `user_rejected` \| `policy_rejected` \| `not_signed_in` \| `network_error` \| `busy`, `message` |
 | `signed_out` | `id?` |
 
-## What's mocked
+## The real backend (`src/backend/real/`)
+
+| File | What it does |
+|---|---|
+| `mod.rs` | `RealBackend`: the flows below, error mapping to the UI's states |
+| `worker.rs` | Spawns `lowki-worker/js/worker.js` (module Web Worker; trunk copies it and `pkg/web` into `dist/lowki-worker/`) and does `postMessage({id, request})` / `{id, response}` |
+| `server.rs` | lowki-server over `fetch` with cookies and `x-lowki-csrf` (the token from each sign-in response) |
+| `passkey.rs` | WebAuthn create/get from the server's options, PRF with the fixed salt `PRF_SALT = "lowki/prf/v1"`; PRF output goes to the worker only, `prf.results` is stripped before posting |
+| `chain.rs` | `ChainProvider` trait + `JsonRpc` (Sepolia by default): balances, `eth_call`, nonce, gas, fees, `eth_sendRawTransaction` |
+| `codec.rs` | base64url, the recovery code encoding (Crockford base32, 14 groups of 4, 16-bit typo check) |
+
+Flows:
+
+- **Sign-up:** email code → `register/start` → `create()` (PRF evaluated) → `register/finish`. If `create()` returned no PRF output, a real `get()` asks for it; **no PRF output from a real `get()` is "PRF unsupported"** (`prf.enabled` is not trusted). Then worker `createWallet` → `PUT /v1/passkeys/{id}/blob` → `PUT /v1/me/share` (S) → the recovery code R is shown.
+- **Returning user:** `login/start` → `get()` with PRF → `login/finish` returns the blob → worker `unlock`. An email sign-in of a known user goes to the passkey step; a known email without passkey + share (sign-up stopped halfway) starts sign-up again.
+- **Lost everything:** email code → "Lost your passkey? Use your recovery code" → `POST /v1/me/share/release` → worker `recover(S, R)` → new passkey → worker `rewrap` → `PUT` blob. Same seed, same addresses.
+- **Per app:** worker `appAccount(origin)` gives the address; `POST /v1/apps/{app}/token {origin}` gives the access token and `user_id` (the token's `sub`). `origin` is the parent page's origin as the browser reports it (`location.ancestorOrigins[0]`); the `origin=` flag is only a fallback, so an app can't claim another app's account.
+- **Signing** (`signMessage`, `signTypedData`, `signTransaction`) runs in the worker after the confirm sheet, for the app's origin. If the worker auto-locked (15 min), the passkey unlocks it again first.
+- **Balances / sends:** public USDC (Circle's Sepolia USDC) and ETH from the RPC; public sends and app transactions are EIP-1559, signed in the worker and broadcast with the provider.
+- **Still on the mock:** the private balance, private send, Move in/out, delegation (review, approve, list, revoke), activity (empty: there is no indexer), sign-in method link/unlink, and cloud backup of the recovery code.
+- **Passkey registration inside the app's iframe (stopgap):** the browser marks it `crossOrigin: true`, which webauthn-rs 0.5 always rejects. Registration is `attestation: "none"`, so nothing signs `clientDataJSON`; `passkey.rs` clears that flag (keeping type, challenge and origin, which the server checks). Assertions are untouched. The real fix is in lowki-server: accept `crossOrigin` when `topOrigin` is a registered app origin.
+
+## What's mocked (`?backend=mock`)
 
 **Everything behind the traits is mocked** (`src/backend/mock.rs`):
 
@@ -140,7 +202,7 @@ Fonts (Bricolage Grotesque, Instrument Sans and IBM Plex Mono, all SIL OFL, with
 
 ## Tests
 
-The tests live in `tests/e2e/`. They are Node with no npm dependencies, plus the repo's chromedriver 156, and they run on the macOS host.
+The tests live in `tests/e2e/`. They are Node with no npm dependencies of their own, plus the repo's chromedriver 156 (or raw CDP), and they run on the macOS host. `real.mjs` borrows `jose` from `crates/lowki-server/tests/node/node_modules` and `viem` from `vectors/lowki-worker/node_modules`.
 
 - `node tests/e2e/clickthrough.mjs` drives the demo dapp, so postMessage is exercised end to end. It covers:
   - sign in with Google (mock);
@@ -151,3 +213,10 @@ The tests live in `tests/e2e/`. They are Node with no npm dependencies, plus the
   - approve a delegation, asserting the policy sentences and attestation;
   - revoke it in Settings, asserting the dapp gets `delegation_revoked`.
 - `node tests/e2e/screens.mjs` takes every screenshot and writes the contact sheet.
+- Both run with `backend=mock`.
+- `node tests/e2e/real.mjs` is the **real backend** end to end, with a CDP virtual authenticator (ctap2.1, UV, PRF). Start lowki-server first with `tests/e2e/real-server.sh` (VM or host; fresh database, wallet origin `http://localhost:8740`, dapps `:8741`/`:8742`). The script serves `dist/` on `:8740` with a same-origin `/v1/` proxy and the demo dapp on `:8741` and `:8742`, then checks:
+  1. sign-up with email (the code is read from `target/wallet-ui-e2e/server.log`) and a passkey; the dapp gets the address, pairwise ID and a JWT that verifies against the server's JWKS (`jose`);
+  2. reload and passkey login: same address and ID; the Sepolia balance loads;
+  3. `sign_message` from the dapp: the signature recovers to the app address (`viem`);
+  4. the second origin: a different address and ID with the same passkey;
+  5. storage cleared and passkey gone: email + recovery code, same address, and the new passkey unlocks after a reload.
