@@ -171,36 +171,12 @@ fn credential_json(cred: &JsValue) -> Value {
 }
 
 /// `navigator.credentials.create` with the server's options, PRF evaluated if possible.
-pub async fn create(options: &Value) -> Result<Ceremony, PasskeyError> {
-    let mut c = ceremony("create", public_key(options, None)?).await?;
-    same_origin_registration(&mut c.credential);
-    Ok(c)
-}
-
-/// STOPGAP until lowki-server accepts registrations made inside an app's iframe.
 ///
-/// The wallet runs in a cross-origin iframe, so the browser sets `crossOrigin: true` (and
-/// `topOrigin`) in `clientDataJSON`. webauthn-rs 0.5 rejects every such registration
-/// (`CredentialCrossOrigin`, not configurable). Registration uses `attestation: "none"`, so
-/// nothing signs `clientDataJSON` and the server can't rely on the flag anyway; this clears
-/// it and keeps type, challenge and origin, which the server does check. Assertions are not
-/// touched (they are signed, and webauthn-rs accepts cross-origin assertions).
-/// Proper fix (server): accept `crossOrigin: true` when `topOrigin` is a registered app origin.
-fn same_origin_registration(cred: &mut Value) {
-    let attested = cred["response"]["attestationObject"].as_str().and_then(unb64u).is_some_and(|a| {
-        // CBOR map with "fmt": "none" (text string 0x63 'fmt', then 0x64 'none').
-        a.windows(9).any(|w| w == b"cfmtdnone")
-    });
-    let Some(cdj) = cred["response"]["clientDataJSON"].as_str().and_then(unb64u) else { return };
-    let Ok(mut cd) = serde_json::from_slice::<Value>(&cdj) else { return };
-    if !attested || cd.get("crossOrigin") != Some(&Value::Bool(true)) {
-        return;
-    }
-    if let Some(m) = cd.as_object_mut() {
-        m.insert("crossOrigin".into(), Value::Bool(false));
-        m.remove("topOrigin");
-    }
-    cred["response"]["clientDataJSON"] = Value::String(b64u(cd.to_string().as_bytes()));
+/// Inside the app's iframe the browser marks the ceremony `crossOrigin: true` with the app page
+/// as `topOrigin`; the credential is posted as is, and lowki-server accepts it only when that
+/// top origin is a registered app origin.
+pub async fn create(options: &Value) -> Result<Ceremony, PasskeyError> {
+    ceremony("create", public_key(options, None)?).await
 }
 
 /// `navigator.credentials.get`. With `allow`, only that credential (just created) is offered.
