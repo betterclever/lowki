@@ -1,0 +1,36 @@
+# docker compose up -d
+# Copy .env.example to .env and fill it in first. SQLite in a volume by default;
+# `docker compose --profile postgres up -d` adds Postgres (and set LOWKI_DATABASE_URL accordingly).
+services:
+  lowki-server:
+    build: .
+    image: lowki-server:latest
+    restart: unless-stopped
+    ports:
+      - "${LOWKI_PORT:-8080}:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LOWKI_BIND: 0.0.0.0:8080
+      LOWKI_PUBLIC_URL: ${LOWKI_PUBLIC_URL:?set LOWKI_PUBLIC_URL in .env}
+      LOWKI_SERVER_SECRET: ${LOWKI_SERVER_SECRET:?set LOWKI_SERVER_SECRET in .env (openssl rand -hex 32)}
+      LOWKI_DATABASE_URL: ${LOWKI_DATABASE_URL:-sqlite:///data/lowki.db?mode=rwc}
+      LOWKI_ADMIN_TOKEN: ${LOWKI_ADMIN_TOKEN:-}
+    volumes:
+      - lowki-data:/data
+
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lowki
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: lowki
+    volumes:
+      - lowki-pg:/var/lib/postgresql/data
+
+volumes:
+  lowki-data:
+  lowki-pg:
