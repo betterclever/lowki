@@ -1,0 +1,13 @@
+{
+  "name": "lowki-shares-vectors",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen": "node --import ./rng-hook.mjs --import tsx gen.ts",
+    "verify-rust": "node --import tsx verify-rust.ts"
+  },
+  "dependencies": {
+    "shamir-secret-sharing": "0.0.4",
+    "tsx": "4.20.6"
+  }
+}
