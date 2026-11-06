@@ -1,9 +1,12 @@
 //! snarkjs `.zkey` (Groth16) reader, ported from `ark-circom` 0.5.0 `src/zkey.rs`
 //! (MIT/Apache-2.0, <https://github.com/arkworks-rs/circom-compat>). Changes vs upstream:
 //! reads from an in-memory byte slice (browser-fetched bytes), returns errors instead of
-//! panicking on malformed input, checks the curve/field, and skips the (slow) G2 subgroup
-//! checks; every point is still checked to be on the curve. G1 on bn254 has cofactor 1, so
-//! the on-curve check is also a subgroup check there.
+//! panicking on malformed input, and checks the curve/field. Every point is checked to be on
+//! the curve; G1 on bn254 has cofactor 1, so that is also its subgroup check. G2 points are
+//! subgroup-checked too: always for the verifying key (3 points), and for the 36 901-point
+//! `b_g2_query` only when `check_g2_query` is set. `CircuitProver::load` clears it for
+//! sha256-pinned artifacts (bytes identical to a file whose points a test checks), and
+//! `load_unpinned` sets it.
 //!
 //! Sections: 1 header (prover type, 1 = Groth16), 2 Groth header, 3 IC, 4 coefficients,
 //! 5 A, 6 B1, 7 B2, 8 C (= arkworks `l_query`), 9 H, 10 contributions.
@@ -64,6 +67,14 @@ impl<'a> Reader<'a> {
         }
         Ok(p)
     }
+    /// G2 point, on the curve and in the prime-order subgroup.
+    fn g2_checked(&mut self) -> Result<G2Affine, Error> {
+        let p = self.g2()?;
+        if !p.is_in_correct_subgroup_assuming_on_curve() {
+            return Err(Error::Zkey("G2 point not in the subgroup".into()));
+        }
+        Ok(p)
+    }
     fn g2(&mut self) -> Result<G2Affine, Error> {
         let x = Fq2::new(self.fq()?, self.fq()?);
         let y = Fq2::new(self.fq()?, self.fq()?);
@@ -85,7 +96,7 @@ pub struct Zkey {
     pub n_public: usize,
 }
 
-pub fn read_zkey(buf: &[u8]) -> Result<Zkey, Error> {
+pub fn read_zkey(buf: &[u8], check_g2_query: bool) -> Result<Zkey, Error> {
     let mut r = Reader::at(buf, 0);
     if r.bytes(4)? != b"zkey" {
         return Err(Error::Zkey("bad magic (not a .zkey file)".into()));
@@ -126,10 +137,10 @@ pub fn read_zkey(buf: &[u8]) -> Result<Zkey, Error> {
     }
     let alpha_g1 = h.g1()?;
     let beta_g1 = h.g1()?;
-    let beta_g2 = h.g2()?;
-    let gamma_g2 = h.g2()?;
+    let beta_g2 = h.g2_checked()?;
+    let gamma_g2 = h.g2_checked()?;
     let delta_g1 = h.g1()?;
-    let delta_g2 = h.g2()?;
+    let delta_g2 = h.g2_checked()?;
 
     let g1s = |id: usize, n: usize| -> Result<Vec<G1Affine>, Error> {
         let mut s = sec(id)?;
@@ -140,7 +151,11 @@ pub fn read_zkey(buf: &[u8]) -> Result<Zkey, Error> {
     let b_g1_query = g1s(6, n_vars)?;
     let b_g2_query = {
         let mut s = sec(7)?;
-        (0..n_vars).map(|_| s.g2()).collect::<Result<Vec<_>, _>>()?
+        if check_g2_query {
+            (0..n_vars).map(|_| s.g2_checked()).collect::<Result<Vec<_>, _>>()?
+        } else {
+            (0..n_vars).map(|_| s.g2()).collect::<Result<Vec<_>, _>>()?
+        }
     };
     let l_query = g1s(8, n_vars - n_public - 1)?;
     let h_query = g1s(9, domain_size)?;
