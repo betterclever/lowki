@@ -1,0 +1,16 @@
+{
+  "name": "lowki-site",
+  "private": true,
+  "type": "module",
+  "description": "Lowki showcase site: a real Privacy Pools withdraw proof on the visitor's GPU, raced against snarkjs. Self-hosted, no CDNs.",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "./serve.sh"
+  },
+  "dependencies": {
+    "snarkjs": "0.7.5"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

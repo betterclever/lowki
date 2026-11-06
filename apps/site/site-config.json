@@ -1,0 +1,10 @@
+{
+  "_comment": "Fill these in before publishing. Empty strings render as 'link coming soon'. Read at runtime by the page, so editing dist/site-config.json needs no rebuild.",
+  "repo": "",
+  "video": "",
+  "demos": [
+    { "name": "Privy example app, on Lowki", "detail": "An unmodified Privy app switched with one import", "url": "" },
+    { "name": "Lowki tips", "detail": "Tip a creator at alice.lowki.eth: a fresh stealth address every time", "url": "" },
+    { "name": "Demo dapp", "detail": "Two apps, one passkey, two unlinkable wallets", "url": "" }
+  ]
+}

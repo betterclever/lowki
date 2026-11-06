@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lowki · Privy, but private</title>
+<meta name="description" content="Lowki is an embedded wallet with Privy's SDK, built so no app, server or RPC has to be trusted with your keys or the list of apps you use. Prove a private withdrawal on your own GPU, right here.">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0A1109">
+<link rel="icon" href="logo/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/bricolage-grotesque-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/instrument-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="styles.css">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<a class="skip" href="#prove">Skip to the proof</a>
+
+<!-- ============================== HERO ============================== -->
+<header class="hero" id="top">
+  <canvas id="hero-canvas" class="hero-canvas" aria-hidden="true"></canvas>
+  <nav class="nav wrap" aria-label="Main">
+    <a class="nav-logo" href="#top" aria-label="Lowki home"><img src="logo/lowki-lockup-dark.svg" alt="Lowki" width="98" height="48"></a>
+    <ul class="nav-links">
+      <li><a href="#prove">Prove it</a></li>
+      <li><a href="#why">Why</a></li>
+      <li><a href="#who">Who learns what</a></li>
+      <li><a href="#numbers">Numbers</a></li>
+      <li><a data-link="repo" href="#links">GitHub<span class="soon" hidden> (soon)</span></a></li>
+    </ul>
+    <button id="theme-btn" class="theme-btn" type="button" aria-label="Switch light or dark theme">
+      <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="4.2" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="M10 1.8v2M10 16.2v2M1.8 10h2M16.2 10h2M4.2 4.2l1.4 1.4M14.4 14.4l1.4 1.4M4.2 15.8l1.4-1.4M14.4 5.6l1.4-1.4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>
+    </button>
+  </nav>
+
+  <div class="hero-grid wrap">
+    <div class="hero-copy">
+      <p class="eyebrow">An embedded wallet · ETHGlobal 2026</p>
+      <h1 class="hero-title">Privy,<br>but private.</h1>
+      <ul class="hero-points">
+        <li><span class="dot" aria-hidden="true"></span><span><strong>Your users' keys stay on their device.</strong> The seed lives in a Rust worker, sealed by their passkey.</span></li>
+        <li><span class="dot" aria-hidden="true"></span><span><strong>Apps can't track them across apps.</strong> Every app gets its own wallet and its own user ID.</span></li>
+        <li><span class="dot" aria-hidden="true"></span><span><strong>Private payments in one call.</strong> Privacy Pools through Kohaku, proved in the browser.</span></li>
+      </ul>
+      <div class="hero-cta">
+        <a class="btn btn-lime" href="#prove">Prove it on your GPU</a>
+        <a class="btn btn-ghost" data-link="video" href="#links">Watch the demo<span class="soon" hidden> (soon)</span></a>
+      </div>
+    </div>
+    <div class="hero-mark">
+      <div id="hero-mark-slot" class="hero-mark-slot">
+        <img class="hero-mark-fallback" src="logo/lowki-mark-night.svg" alt="">
+      </div>
+      <p class="hero-gpu-label mono" id="hero-gpu-label">Rendering with WebGPU…</p>
+    </div>
+  </div>
+</header>
+
+<main>
+<!-- ============================== ONE IMPORT ============================== -->
+<section class="section import" id="import" aria-labelledby="import-h">
+  <div class="wrap import-grid">
+    <div class="reveal">
+      <p class="eyebrow">Migrate</p>
+      <h2 id="import-h" class="h2">One import.</h2>
+      <p class="lede">Keep <code>PrivyProvider</code>, <code>usePrivy</code>, <code>useWallets</code> and the sign and send hooks. Change the package name, point at a Lowki app ID, and your users' keys move onto their device.</p>
+      <p class="muted small">Our example app is an unmodified Privy app: the same source type-checks against both <code>@privy-io/react-auth</code> 3.51.3 and <code>@lowki/react-auth</code>, and runs on Lowki through a one-line alias.</p>
+    </div>
+    <figure class="diff reveal" aria-label="Code change from Privy to Lowki">
+      <figcaption class="diff-head mono"><span>src/app/providers.tsx</span><span class="diff-stat"><b class="add">+1</b> <b class="del">−1</b></span></figcaption>
+<pre class="mono"><code><span class="ln del"><span class="sign">−</span>import { PrivyProvider, usePrivy } from '<span class="pkg">@privy-io/react-auth</span>';</span><span class="ln add"><span class="sign">+</span>import { PrivyProvider, usePrivy } from '<span class="pkg">@lowki/react-auth</span>';</span><span class="ln ctx"> </span><span class="ln ctx"> export function Providers({ children }) {</span><span class="ln ctx">   return (</span><span class="ln ctx">     &lt;PrivyProvider appId="app_…" config={config}&gt;</span><span class="ln ctx">       {children}</span><span class="ln ctx">     &lt;/PrivyProvider&gt;</span><span class="ln ctx">   );</span><span class="ln ctx"> }</span></code></pre>
+    </figure>
+  </div>
+</section>
+
+<!-- ============================== PROVE IT ============================== -->
+<section class="section prove" id="prove" aria-labelledby="prove-h">
+  <div class="wrap">
+    <div class="prove-head reveal">
+      <p class="eyebrow eyebrow-lime">Live, in this tab</p>
+      <h2 id="prove-h" class="h2">Prove it on your GPU.</h2>
+      <p class="lede">A real Privacy Pools withdrawal proof: the audited circuits (1.0.5), a 1,500-leaf pool, made by Lowki's Rust prover on your GPU with WebGPU. Then snarkjs, the standard JavaScript prover, proves the same withdrawal from the same bytes with every core you have. Each proof is checked by both verifiers.</p>
+    </div>
+
+    <div class="race" id="race" data-state="idle">
+      <div class="vis">
+        <canvas id="vis-canvas" class="vis-canvas" aria-hidden="true"></canvas>
+        <p class="vis-phase mono" id="vis-phase" aria-hidden="true"></p>
+        <img class="vis-fallback-img" src="logo/lowki-mark-night.svg" alt="">
+        <p class="vis-label mono">An artistic rendering of the real computation: one point per proving-key base (36,901), streamed into Pippenger buckets, then summed into the proof. The stages replay at 1/12 speed from the measured timings. The timings on the right are real.</p>
+      </div>
+
+      <div class="panel">
+        <button id="race-btn" class="btn btn-lime btn-big" type="button">Prove a private withdrawal</button>
+        <p id="race-status" class="race-status" role="status" aria-live="polite">Downloads 21 MB of circuit once, then proves twice.</p>
+        <p id="race-gpu-note" class="note" hidden>This browser has no WebGPU, so Lowki proves on one CPU thread instead (about 2 s on a fast laptop). The proof is identical; only the speed changes. Try Chrome or Edge on a desktop to see the GPU path.</p>
+
+        <ol class="steps">
+          <li id="step-dl" data-state="todo"><span class="st" aria-hidden="true"></span><span class="k">Download the circuit</span><span class="v mono"></span><span class="bar" id="dl-bar"></span></li>
+          <li id="step-load" data-state="todo"><span class="st" aria-hidden="true"></span><span class="k">Load and sha256-pin it</span><span class="v mono"></span></li>
+          <li id="step-gpu" data-state="todo"><span class="st" aria-hidden="true"></span><span class="k">Open WebGPU</span><span class="v mono"></span></li>
+          <li id="step-upload" data-state="todo"><span class="st" aria-hidden="true"></span><span class="k">Upload the proving key to the GPU</span><span class="v mono"></span></li>
+        </ol>
+
+        <div class="lanes">
+          <div class="lane lane-lowki" id="lane-lowki" data-state="idle">
+            <div class="lane-head"><span class="lane-name">Lowki</span><span class="lane-sub mono" id="lowki-sub">Rust/wasm · WebGPU</span></div>
+            <div class="lane-time mono" id="lowki-time">–</div>
+            <div class="lane-bar"><i id="lowki-bar"></i></div>
+            <ul class="lane-checks" id="lowki-checks"></ul>
+          </div>
+          <div class="lane lane-snark" id="lane-snark" data-state="idle">
+            <div class="lane-head"><span class="lane-name">snarkjs</span><span class="lane-sub mono" id="snark-sub">snarkjs 0.7.5 · web workers</span></div>
+            <div class="lane-time mono" id="snark-time">–</div>
+            <div class="lane-bar"><i id="snark-bar"></i></div>
+            <ul class="lane-checks" id="snark-checks"></ul>
+          </div>
+        </div>
+
+        <div class="result" id="result" hidden>
+          <p class="result-x"><span id="result-x">–</span> <span id="result-word" class="result-word">faster</span></p>
+          <p id="result-detail" class="result-detail"></p>
+        </div>
+        <div class="stages" id="stages" hidden></div>
+        <p class="fine">Proof time is the whole proof: witness, constraint evaluation, NTTs, five MSMs and assembly, timed in this tab with <code>performance.now()</code>. One-time setup (download, load, GPU upload) is listed above and not counted, for either prover. Run it twice: the second run is warm, like our benchmarks.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== WHY ============================== -->
+<section class="section why" id="why" aria-labelledby="why-h">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">Why it kicks</p>
+      <h2 id="why-h" class="h2">The same SDK. A different promise.</h2>
+    </div>
+    <div class="cards">
+      <article class="card reveal">
+        <svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="9" width="12" height="8.5" rx="2.5"/><path d="M6.8 9V6.6a3.2 3.2 0 0 1 6.4 0V9"/><path d="M10 12.3v2"/></svg>
+        <h3>Keys on the device</h3>
+        <p>The seed is made and used in a Rust/wasm worker, wrapped with a key from the passkey's PRF. The server stores a blob it can't open. Neither the operator, Google nor an app can sign for the user.</p>
+      </article>
+      <article class="card reveal">
+        <svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><circle cx="6" cy="7" r="3"/><circle cx="14" cy="7" r="3"/><path d="M2.5 17c.6-2.6 2-4 3.5-4s2.9 1.4 3.5 4M10.5 17c.6-2.6 2-4 3.5-4s2.9 1.4 3.5 4"/></svg>
+        <h3>A wallet per app</h3>
+        <p>Every app origin gets its own address, derived on the device, and a pairwise user ID (<code>did:lowki:…</code>). Two apps can't link the same user through Lowki.</p>
+      </article>
+      <article class="card card-ink reveal">
+        <svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5c-2.6 0-4.2 2-4.2 4.6 0 1.4.4 2.3 1 3.1-1.4 1.1-2.3 2.8-2.3 4.6 0 1.8 2.4 2.9 5.5 2.9s5.5-1.1 5.5-2.9c0-1.8-.9-3.5-2.3-4.6.6-.8 1-1.7 1-3.1 0-2.6-1.6-4.6-4.2-4.6Z"/><circle cx="10" cy="12.6" r="1.2"/><path d="M10 13.6v1.6"/></svg>
+        <h3>Private sends</h3>
+        <p>Shield into Privacy Pools and withdraw privately through Kohaku's plugin. The Groth16 proof is made in the browser: 168 ms on WebGPU. Ragequit is an exit nobody can block.</p>
+      </article>
+      <article class="card reveal">
+        <svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M2.5 10h15M10 2.5c2 2.2 3 4.7 3 7.5s-1 5.3-3 7.5c-2-2.2-3-4.7-3-7.5s1-5.3 3-7.5Z"/></svg>
+        <h3>Anonymous reads</h3>
+        <p>An Anon-RPC provider mode (Nox, Nym or tor-js, through Kohaku's provider interface), with one isolated session per app address, so the RPC can't join them up.</p>
+      </article>
+      <article class="card reveal">
+        <svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h4l2-5 2 10 2-5h4"/></svg>
+        <h3>ENS stealth names</h3>
+        <p><code class="pill">alice.lowki.eth</code> resolves to a fresh stealth address on every lookup (ERC-5564, ENSIP-30, verified on chain). A public name without a public payment history. Live on Sepolia.</p>
+      </article>
+      <article class="card reveal">
+        <svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3.5" width="14" height="5" rx="1.5"/><rect x="3" y="11.5" width="14" height="5" rx="1.5"/><path d="M6 6h.01M6 14h.01"/></svg>
+        <h3>Self-hostable</h3>
+        <p>One server binary, SQLite or Postgres. Any app can run its own server, wallet origin and ENS gateway. Nothing on chain depends on a Lowki contract.</p>
+      </article>
+      <article class="card reveal">
+        <svg class="ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5 2.5 10 7 15M13 5l4.5 5-4.5 5"/></svg>
+        <h3>A Rust core</h3>
+        <p>Keys, Shamir shares, stealth addresses, Poseidon trees and the prover are Rust, tested against the TypeScript references. JavaScript is bindings only.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== WHO LEARNS WHAT ============================== -->
+<section class="section who" id="who" aria-labelledby="who-h">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">CROPS · Privacy</p>
+      <h2 id="who-h" class="h2">Who learns what.</h2>
+      <p class="lede">Every party Lowki talks to, and what it can and can't see. Where we fall short today, the table says so.</p>
+    </div>
+    <div class="table-wrap reveal">
+      <table class="crops">
+        <thead><tr><th scope="col">Party</th><th scope="col">Learns</th><th scope="col">Does not learn</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">The app</th>
+            <td>Its own pairwise user ID (<code>did:lowki:…</code>), its own address for the user (and that address's public history), the requests it sends to the wallet, when the user is signed in</td>
+            <td>The user's email or Google account, the seed, the user's addresses or IDs in other apps, private balances</td></tr>
+          <tr><th scope="row">lowki-server operator</th>
+            <td>Passkey public keys; HMACs of the Google subject and email; the wrapped seed blob and share S (both useless alone); sign-in times; <strong class="gap">which apps each user gets tokens for</strong>, since it mints them; client IPs (in memory, for rate limits). It also serves the wallet code</td>
+            <td>Keys, the seed, PRF outputs, the recovery code, transactions signed on the device, the user's addresses</td></tr>
+          <tr><th scope="row">RPC provider</th>
+            <td>Today the wallet's reads go through a plain JSON-RPC endpoint: it sees the IP and every address queried, so it <strong class="gap">can link the per-app addresses</strong> one browser looks up</td>
+            <td>With Anon-RPC (Nox, Nym, tor-js): the IP, and with per-address sessions, which addresses belong together. Used for Privacy Pools traffic; <strong class="gap">not yet wired into the wallet UI</strong></td></tr>
+          <tr><th scope="row">Privacy Pools relayer</th>
+            <td>The withdrawal it submits: recipient, amount, fee (public once mined); the requester's IP unless it goes through Anon-RPC</td>
+            <td>Which deposit is being spent, or the depositor (hidden by the zero-knowledge proof)</td></tr>
+          <tr><th scope="row">ASP (0xbow)</th>
+            <td>Every deposit and its depositor address (public on chain) and its approval decision; the IP and timing of approval-set fetches unless through Anon-RPC</td>
+            <td>Which note a withdrawal spends, the recipient's link to the deposit</td></tr>
+          <tr><th scope="row">ENS gateway operator</th>
+            <td>Every lookup of a <code>.lowki.eth</code> name and every stealth address it hands out, so it <strong class="gap">can link a name's stealth addresses</strong></td>
+            <td>The viewing or spending key. It can't redirect funds (verified on chain). Senders who derive client-side bypass it</td></tr>
+          <tr><th scope="row">Google / email provider</th>
+            <td>Google: that the account signed in to the operator's OAuth client (scope <code>openid</code> only). Email: the address and a sign-in code</td>
+            <td>Which app the user was using, addresses, keys</td></tr>
+          <tr><th scope="row">The chain (public)</th>
+            <td>Each app address and its transactions; shielding into Privacy Pools; withdrawals to a recipient; payments to stealth addresses</td>
+            <td>The link between per-app addresses (unless funded from a common source); the link between a deposit and a private withdrawal; that a stealth address belongs to a name</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted small reveal">Stated plainly: whoever serves the wallet origin could serve code that reads the seed after unlock (self-hosting moves that trust to an operator you choose), and the server operator is trusted for availability and for unlinkability across apps, not for custody. Full CROPS write-up in the README.</p>
+  </div>
+</section>
+
+<!-- ============================== NUMBERS ============================== -->
+<section class="section numbers" id="numbers" aria-labelledby="numbers-h">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">Benchmarks</p>
+      <h2 id="numbers-h" class="h2">Real numbers, wins and losses.</h2>
+      <p class="lede">Apple M5 Max, Chrome 156, medians after warm-up. Every row was checked for identical output against the TypeScript reference.</p>
+    </div>
+    <div class="bench">
+      <div class="bench-row reveal" style="--a:168;--b:603;--max:603">
+        <div class="bench-k"><b>Privacy Pools withdraw proof</b><span>Lowki WebGPU vs snarkjs, 18 workers</span></div>
+        <div class="bench-bars"><span class="bb bb-l"><i></i><em>168 ms</em></span><span class="bb bb-r"><i></i><em>603 ms</em></span></div>
+        <div class="bench-x win">3.6× faster</div>
+      </div>
+      <div class="bench-row reveal" style="--a:2080;--b:4380;--max:4380">
+        <div class="bench-k"><b>Withdraw proof, one CPU thread</b><span>Lowki wasm vs snarkjs single-thread</span></div>
+        <div class="bench-bars"><span class="bb bb-l"><i></i><em>2.08 s</em></span><span class="bb bb-r"><i></i><em>4.38 s</em></span></div>
+        <div class="bench-x win">2.1× faster</div>
+      </div>
+      <div class="bench-row reveal" style="--a:526;--b:3240;--max:3240">
+        <div class="bench-k"><b>Stealth scan, 10k announcements</b><span>Lowki vs ScopeLift SDK</span></div>
+        <div class="bench-bars"><span class="bb bb-l"><i></i><em>0.53 s</em></span><span class="bb bb-r"><i></i><em>3.24 s</em></span></div>
+        <div class="bench-x win">6.2× faster</div>
+      </div>
+      <div class="bench-row reveal" style="--a:0.887;--b:4.18;--max:4.18">
+        <div class="bench-k"><b>Mnemonic → key</b><span>Lowki vs Kohaku</span></div>
+        <div class="bench-bars"><span class="bb bb-l"><i></i><em>0.89 ms</em></span><span class="bb bb-r"><i></i><em>4.18 ms</em></span></div>
+        <div class="bench-x win">4.7× faster</div>
+      </div>
+      <div class="bench-row reveal" style="--a:47.6;--b:39;--max:47.6">
+        <div class="bench-k"><b>Commitment (ragequit) proof</b><span>Lowki WebGPU vs snarkjs, 18 workers</span></div>
+        <div class="bench-bars"><span class="bb bb-l"><i></i><em>47.6 ms</em></span><span class="bb bb-r"><i></i><em>39 ms</em></span></div>
+        <div class="bench-x loss">1.2× slower</div>
+      </div>
+      <div class="bench-row reveal" style="--a:122;--b:65;--max:122">
+        <div class="bench-k"><b>secp256k1 signing</b><span>Lowki wasm vs noble</span></div>
+        <div class="bench-bars"><span class="bb bb-l"><i></i><em>122 µs</em></span><span class="bb bb-r"><i></i><em>65 µs</em></span></div>
+        <div class="bench-x loss">1.9× slower</div>
+      </div>
+      <div class="bench-row reveal" style="--a:768;--b:804;--max:804">
+        <div class="bench-k"><b>Payload, everything (gzip)</b><span>Lowki wasm vs the TS libraries</span></div>
+        <div class="bench-bars"><span class="bb bb-l"><i></i><em>768 KiB</em></span><span class="bb bb-r"><i></i><em>804 KiB</em></span></div>
+        <div class="bench-x even">about even</div>
+      </div>
+      <p class="bench-legend mono"><span class="sw sw-l"></span>Lowki (Rust/wasm) <span class="sw sw-r"></span>TypeScript reference</p>
+    </div>
+    <p class="muted small reveal">Small proofs are bound by fixed GPU latency, so snarkjs still wins the tiny commitment circuit; withdraw is the one users wait on. Method, raw data and every caveat: <code>bench/RESULTS.md</code>.</p>
+  </div>
+</section>
+
+<!-- ============================== LINKS ============================== -->
+<section class="section links" id="links" aria-labelledby="links-h">
+  <div class="wrap links-grid">
+    <div class="reveal">
+      <p class="eyebrow eyebrow-lime">Try it</p>
+      <h2 id="links-h" class="h2">Sign in. Send privately.</h2>
+      <p class="lede">The demo apps run on the real backend: passkey sign-up inside the app, a wallet per app, recovery, and a private send.</p>
+      <div class="link-btns">
+        <a class="btn btn-lime" data-link="video" href="#links">Watch the 3-minute demo<span class="soon" hidden> (soon)</span></a>
+        <a class="btn btn-ghost" data-link="repo" href="#links">Read the code<span class="soon" hidden> (soon)</span></a>
+      </div>
+    </div>
+    <ul class="demo-list reveal" id="demo-list"><li class="muted">Loading links…</li></ul>
+  </div>
+</section>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-grid">
+    <img src="logo/lowki-lockup-dark.svg" alt="Lowki" width="82" height="40">
+    <p id="audit" class="audit mono" data-ok="true"><span class="audit-dot" aria-hidden="true"></span><span>Requests this page made to other origins: <b id="audit-n">0</b>. No CDNs, no analytics, fonts bundled (SIL OFL).</span></p>
+    <p class="muted small">MIT or Apache-2.0. Built at ETHGlobal, November 2026.</p>
+  </div>
+</footer>
+</body>
+</html>
