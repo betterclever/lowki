@@ -1,0 +1,142 @@
+{
+  "cases": [
+    {
+      "origin": "https://app.example",
+      "sealed": {
+        "address": "0x029c7909EC1a3c4c2e1FfDee6a24d9fBCA888B2e",
+        "ciphertext": "0x9a3a6dda4a72461e8770697a6ec41fa6d82ea21cbd038f09e3da31defb6ba8ffb5cbfeb429a4a9868f9e7ea3be177d79",
+        "enc": "0xc000da0e771b2f2a49a20eee71360d9ad86ce7fc8a7bf7949d34b66919abbb6f",
+        "grant": {
+          "domain": {
+            "name": "Lowki Delegation",
+            "version": "1"
+          },
+          "message": {
+            "account": "0x029c7909EC1a3c4c2e1FfDee6a24d9fBCA888B2e",
+            "enclaveKey": "0x7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13",
+            "expiry": 1800000000,
+            "nonce": "0x2222222222222222222222222222222222222222222222222222222222222222",
+            "policyIds": [
+              "pol-a",
+              "pol-b"
+            ],
+            "signerId": "signer-1"
+          },
+          "primaryType": "LowkiDelegationGrant",
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              }
+            ],
+            "LowkiDelegationGrant": [
+              {
+                "name": "account",
+                "type": "address"
+              },
+              {
+                "name": "signerId",
+                "type": "string"
+              },
+              {
+                "name": "policyIds",
+                "type": "string[]"
+              },
+              {
+                "name": "expiry",
+                "type": "uint64"
+              },
+              {
+                "name": "nonce",
+                "type": "bytes32"
+              },
+              {
+                "name": "enclaveKey",
+                "type": "bytes32"
+              }
+            ]
+          }
+        },
+        "grantHash": "0x69c14c9e6ef10c0e890ec5d28169800be0b40367529cfcf478e8c4a8a3ca328d",
+        "grantSignature": "0x71e4527ec882c57203747d7d5e8715b04d4318d715342a2ba8b42372598857290085e22c4019d59646fc2c252a87eb31cce9198dc3e049ee6d0cafa70a3451b41b",
+        "suite": "HPKE RFC9180 base mode; KEM DHKEM(X25519, HKDF-SHA256) 0x0020; KDF HKDF-SHA256 0x0001; AEAD ChaCha20-Poly1305 0x0003; info=\"lowki/delegation/v1\"; aad=grantHash",
+        "type": "sealedAppKey"
+      }
+    },
+    {
+      "origin": "https://uniswap.org",
+      "sealed": {
+        "address": "0x7C92F9EA1A198c1C052Fc6992423FebE11ae0442",
+        "ciphertext": "0xa51ebd7fe73373674e74fef85fa05eb055ca512d3d3480a1c2708a912b4d18e1400d754c631ff1562d5e5749c95d7f5a",
+        "enc": "0x40130e32c9dcb1fffebec3da5dc4fbfa2a5b0a63897ed8e5ef5cd25dba980114",
+        "grant": {
+          "domain": {
+            "name": "Lowki Delegation",
+            "version": "1"
+          },
+          "message": {
+            "account": "0x7C92F9EA1A198c1C052Fc6992423FebE11ae0442",
+            "enclaveKey": "0x7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13",
+            "expiry": 1800000001,
+            "nonce": "0x75d528a35a1502f973cf1d6f4e09ebb00e33d26ca0b6cc904387666847837878",
+            "policyIds": [
+              "pol-a",
+              "pol-b"
+            ],
+            "signerId": "signer-1"
+          },
+          "primaryType": "LowkiDelegationGrant",
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              }
+            ],
+            "LowkiDelegationGrant": [
+              {
+                "name": "account",
+                "type": "address"
+              },
+              {
+                "name": "signerId",
+                "type": "string"
+              },
+              {
+                "name": "policyIds",
+                "type": "string[]"
+              },
+              {
+                "name": "expiry",
+                "type": "uint64"
+              },
+              {
+                "name": "nonce",
+                "type": "bytes32"
+              },
+              {
+                "name": "enclaveKey",
+                "type": "bytes32"
+              }
+            ]
+          }
+        },
+        "grantHash": "0x220233b2c79a4849da7a2748e477382bc20517eb986edbfdb7d62fffa72beec9",
+        "grantSignature": "0x5f5bc3a429ad89599ca3a9d4ef9e5dae4e8daedafcaf10eee9cd62336e2c809f0a4f71721b1ad63031a4ed672161de035b28798d432a2e6f42dea17f0da753631b",
+        "suite": "HPKE RFC9180 base mode; KEM DHKEM(X25519, HKDF-SHA256) 0x0020; KDF HKDF-SHA256 0x0001; AEAD ChaCha20-Poly1305 0x0003; info=\"lowki/delegation/v1\"; aad=grantHash",
+        "type": "sealedAppKey"
+      }
+    }
+  ],
+  "enclaveSecretKey": "0x1111111111111111111111111111111111111111111111111111111111111111",
+  "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+}
