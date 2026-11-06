@@ -1,0 +1,41 @@
+{
+  // `npm run typecheck` only. Kept out of tsconfig.json on purpose: tsx reads tsconfig.json
+  // `paths` at runtime, and the catch-all "*" mapping below breaks its resolution of viem et al.
+  // (Node crashes with a V8 module_status check). Runtime resolution is resolve-hook-impl.mjs.
+  //
+  // Typechecks this package together with the pinned Kohaku sources it imports
+  // (vendor/kohaku @ 8c83d64). Kohaku's packages are resolved to their src/ via `paths`, the
+  // same mapping resolve-hook-impl.mjs applies at runtime. Kohaku's own compiler settings
+  // (tsconfig.base.json, verbatimModuleSyntax off as in its package tsconfigs) are used so its
+  // files check as they do upstream.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "typeRoots": ["./node_modules/@types"],
+    "paths": {
+      "@kohaku-eth/plugins": ["../../../vendor/kohaku/packages/plugins/src/index.ts"],
+      "@kohaku-eth/plugins/broadcaster": ["../../../vendor/kohaku/packages/plugins/src/broadcaster/base.ts"],
+      "@kohaku-eth/provider": ["../../../vendor/kohaku/packages/provider/src/index.ts"],
+      "@kohaku-eth/provider/viem": ["../../../vendor/kohaku/packages/provider/src/viem/index.ts"],
+      "@kohaku-eth/poseidon": ["../../../vendor/kohaku/packages/poseidon/src/index.ts"],
+      "@kohaku-eth/poseidon-lean-imt": ["../../../vendor/kohaku/packages/poseidon-lean-imt/src/index.ts"],
+      "@kohaku-eth/privacy-pools/src/*": ["../../../vendor/kohaku/packages/privacy-pools/src/*"],
+      "@saga-sync/client": ["./node_modules/@saga-sync/client/dist/index.d.ts"],
+      "~/*": ["../../../vendor/kohaku/packages/plugins/src/*"],
+      "*": ["./node_modules/*", "./node_modules/@types/*"]
+    }
+  },
+  "include": ["src", "test", "scripts"]
+}
