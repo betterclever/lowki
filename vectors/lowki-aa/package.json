@@ -1,0 +1,16 @@
+{
+  "name": "lowki-aa-vectors",
+  "private": true,
+  "type": "module",
+  "description": "Differential test vectors for crates/lowki-aa, generated from the pinned Kohaku sources (packages/privacy-pools) + viem",
+  "scripts": {
+    "gen": "node --import ./resolve-hook.mjs --import tsx gen.ts"
+  },
+  "dependencies": {
+    "@privacy-paymasters/sdk": "0.0.5",
+    "ox": "0.12.4",
+    "viem": "2.54.1",
+    "tsx": "4.22.5",
+    "typescript": "5.9.3"
+  }
+}
