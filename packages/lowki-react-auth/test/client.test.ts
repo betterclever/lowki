@@ -4,31 +4,42 @@ import { PrivyErrorCode } from '../src/errors';
 import { ADDRESS, APP, FakeHost, USER_ID, WALLET, fakeChannel, flush, jwt, type FakeChannel } from './fakes';
 
 /** A client wired to a fake wallet frame that behaves like wallet-ui v1. */
-function setup(opts: { capabilities?: string[]; popup?: 'auto' | 'always' | 'never'; userAgent?: string; token?: string; walletSession?: boolean } = {}) {
+function setup(
+  opts: { capabilities?: string[]; popup?: 'auto' | 'always' | 'never'; userAgent?: string; token?: string; walletSession?: boolean; walletChain?: number } = {},
+) {
   const host = new FakeHost();
   const frames: FakeChannel[] = [];
   const popups: FakeChannel[] = [];
-  let signedIn = opts.walletSession ?? false;
+  // Each wallet window (iframe, popup) is its own document with its own session,
+  // like wallet-ui: a popup sign-in does not unlock the iframe.
+  const signedIn = new Map<FakeChannel, boolean>();
   let token = opts.token ?? 'tok-1';
   const wallet = (ch: FakeChannel) => {
+    signedIn.set(ch, ch.kind === 'iframe' && (opts.walletSession ?? false));
     ch.win.onRequest = (m) => {
       const reply = (d: Record<string, unknown>) => ch.win.reply(d);
+      const on = signedIn.get(ch);
+      const auth = { type: 'authenticated', id: m.id, address: ADDRESS, user_id: USER_ID, access_token: token };
       switch (m.type) {
         case 'sign_in':
           // v1: answers at once if signed in; otherwise opens the sheet and waits for the user.
-          if (signedIn) reply({ type: 'authenticated', id: m.id, address: ADDRESS, user_id: USER_ID, access_token: token });
+          if (on) reply(auth);
+          break;
+        case 'get_session':
+          reply(on ? auth : { type: 'rejected', id: m.id, reason: 'not_signed_in', message: 'Not signed in' });
           break;
         case 'sign_message':
-          reply(signedIn ? { type: 'message_signed', id: m.id, signature: '0x' + 'ab'.repeat(65) } : { type: 'rejected', id: m.id, reason: 'not_signed_in', message: 'Sign in first' });
+          reply(on ? { type: 'message_signed', id: m.id, signature: '0x' + 'ab'.repeat(65) } : { type: 'rejected', id: m.id, reason: 'not_signed_in', message: 'Sign in first' });
           break;
         case 'send_transaction':
-          reply({ type: 'transaction_sent', id: m.id, hash: '0x' + 'cd'.repeat(32), sponsored: true });
+          if (opts.walletChain && m.chain_id !== undefined && m.chain_id !== opts.walletChain) reply({ type: 'rejected', id: m.id, reason: 'unsupported_chain', message: 'other chain' });
+          else reply({ type: 'transaction_sent', id: m.id, hash: '0x' + 'cd'.repeat(32), sponsored: true });
           break;
         case 'send_privately':
           reply({ type: 'private_sent', id: m.id, hash: '0x' + 'ef'.repeat(32) });
           break;
         case 'sign_out':
-          signedIn = false;
+          signedIn.set(ch, false);
           reply({ type: 'signed_out', id: m.id });
           break;
       }
@@ -60,11 +71,13 @@ function setup(opts: { capabilities?: string[]; popup?: 'auto' | 'always' | 'nev
   };
   /** The user completes sign-in in the wallet UI. */
   const userSignsIn = (ch = frames[0]!) => {
-    signedIn = true;
+    signedIn.set(ch, true);
     const req = [...ch.win.sent].reverse().find((s) => s.msg.type === 'sign_in')!.msg;
     ch.win.reply({ type: 'authenticated', id: req.id, address: ADDRESS, user_id: USER_ID, access_token: token });
   };
-  return { client, host, frames, popups, start, userSignsIn, setToken: (t: string) => (token = t) };
+  /** The wallet document loses its session without telling the app (reload, lock). */
+  const walletForgets = (ch = frames[0]!) => signedIn.set(ch, false);
+  return { client, host, frames, popups, start, userSignsIn, walletForgets, setToken: (t: string) => (token = t) };
 }
 
 describe('LowkiClient', () => {
@@ -243,5 +256,134 @@ describe('LowkiClient', () => {
     expect(w.join('\n')).toMatch(/wallet, sms/);
     expect(w.join('\n')).toMatch(/createOnLogin "off"/);
     expect(configWarnings({ loginMethods: ['email', 'passkey'], embeddedWallets: { createOnLogin: 'users-without-wallets' } })).toEqual([]);
+  });
+
+  describe('protocol additions (capabilities announced)', () => {
+    const ALL = ['sign_in', 'get_session', 'sign_message', 'sign_typed_data', 'send_transaction', 'send_privately', 'request_delegation', 'sign_out', 'cancel'];
+    const SAFARI = 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/19.0 Safari/605.1.15';
+
+    it('restores the session with the silent get_session, not sign_in', async () => {
+      const { client, frames, start } = setup({ capabilities: ALL, walletSession: true });
+      await start();
+      expect(frames[0]!.win.sent.map((s) => s.msg.type)).toEqual(['get_session']);
+      expect(frames[0]!.shows).toBe(0);
+      expect(client.getState().authenticated).toBe(true);
+    });
+
+    it('signed out: get_session is rejected quietly and the app is ready', async () => {
+      const { client, frames, start } = setup({ capabilities: ALL });
+      await start();
+      expect(client.getState()).toMatchObject({ ready: true, authenticated: false });
+      expect(frames[0]!.shows).toBe(0);
+    });
+
+    it('getAccessToken refreshes an expired token with get_session', async () => {
+      const now = Math.floor(Date.now() / 1000);
+      const { client, frames, start, setToken } = setup({ capabilities: ALL, walletSession: true, token: jwt({ exp: now - 5 }) });
+      await start();
+      const fresh = jwt({ exp: now + 900 });
+      setToken(fresh);
+      expect(await client.getAccessToken()).toBe(fresh);
+      expect(frames[0]!.win.sent.filter((s) => s.msg.type === 'sign_in')).toHaveLength(0);
+    });
+
+    it('reads created_at, is_new_user and a shared email from authenticated', async () => {
+      const { client, frames, start } = setup({ capabilities: ALL });
+      await start();
+      const done = vi.fn();
+      client.onLogin({ onComplete: done });
+      const p = client.loginAsync();
+      await flush();
+      const req = frames[0]!.win.sent.find((s) => s.msg.type === 'sign_in')!.msg;
+      frames[0]!.win.reply({
+        type: 'authenticated', id: req.id, address: ADDRESS, user_id: USER_ID, access_token: 't',
+        created_at: '2026-03-04T05:06:07.000Z', is_new_user: true, email: 'ada@example.com',
+      });
+      await p;
+      const u = client.getState().user!;
+      expect(u.createdAt.toISOString()).toBe('2026-03-04T05:06:07.000Z');
+      expect(u.email).toEqual({ address: 'ada@example.com' });
+      expect(u.linkedAccounts.map((a) => a.type)).toEqual(['wallet', 'email']);
+      expect(done).toHaveBeenCalledWith(expect.objectContaining({ isNewUser: true }));
+    });
+
+    it('closing the modal sends cancel for the open request', async () => {
+      const { client, frames, start } = setup({ capabilities: ALL });
+      await start();
+      const p = client.loginAsync();
+      await flush();
+      const req = frames[0]!.win.sent.find((s) => s.msg.type === 'sign_in')!.msg;
+      (client as any).transport.cancelInteractive('closed');
+      await expect(p).rejects.toMatchObject({ code: PrivyErrorCode.USER_EXITED_AUTH_FLOW });
+      expect(frames[0]!.win.last).toEqual({ lowki: 1, type: 'cancel', id: req.id });
+    });
+
+    it('does not send cancel to a wallet that did not announce it', async () => {
+      const { client, frames, start } = setup();
+      await start();
+      const p = client.loginAsync();
+      await flush();
+      (client as any).transport.cancelInteractive('closed');
+      await expect(p).rejects.toBeTruthy();
+      expect(frames[0]!.win.sent.some((s) => s.msg.type === 'cancel')).toBe(false);
+    });
+
+    it('sends chain_id with transactions; a wallet on another chain is unsupported_chain_id', async () => {
+      const { client, frames, start } = setup({ capabilities: ALL, walletSession: true, walletChain: 1 });
+      await start();
+      await expect(client.sendTransaction({ to: ADDRESS, value: 1 })).rejects.toMatchObject({ code: PrivyErrorCode.UNSUPPORTED_CHAIN_ID, rpcCode: 4902 });
+      expect(frames[0]!.win.last).toMatchObject({ type: 'send_transaction', chain_id: 11155111 });
+    });
+
+    it('popup sign-in hands the session to the iframe: the next request signs the iframe in first', async () => {
+      const { client, popups, frames, start, userSignsIn } = setup({ capabilities: ALL, userAgent: SAFARI });
+      await start();
+      const p = client.loginAsync();
+      popups[0]!.win.reply({ type: 'ready', app_id: 'app_1', capabilities: ALL });
+      await vi.waitFor(() => expect(popups[0]!.win.sent.length).toBe(1));
+      userSignsIn(popups[0]!);
+      await p;
+      expect(client.getState().authenticated).toBe(true);
+      // The iframe was asked, silently, and has no session.
+      expect(frames[0]!.win.sent.map((s) => s.msg.type)).toEqual(['get_session', 'get_session']);
+      expect(frames[0]!.shows).toBe(0);
+
+      const signed = client.signMessage({ message: 'hi' });
+      await vi.waitFor(() => expect(frames[0]!.win.last?.type).toBe('sign_in'));
+      expect(frames[0]!.shown).toBe(true); // the user unlocks with the passkey in the iframe
+      userSignsIn(frames[0]!);
+      expect(await signed).toEqual({ signature: '0x' + 'ab'.repeat(65) });
+      expect(frames[0]!.win.sent.map((s) => s.msg.type)).toEqual(['get_session', 'get_session', 'sign_in', 'sign_message']);
+      // Only once.
+      await client.signMessage({ message: 'again' });
+      expect(frames[0]!.win.sent.filter((s) => s.msg.type === 'sign_in')).toHaveLength(1);
+    });
+
+    it('hand-off refuses to continue when a different account signs in to the iframe', async () => {
+      const { client, popups, frames, start, userSignsIn } = setup({ capabilities: ALL, userAgent: SAFARI });
+      await start();
+      const p = client.loginAsync();
+      popups[0]!.win.reply({ type: 'ready', app_id: 'app_1', capabilities: ALL });
+      await vi.waitFor(() => expect(popups[0]!.win.sent.length).toBe(1));
+      userSignsIn(popups[0]!);
+      await p;
+      const signed = client.signMessage({ message: 'hi' });
+      await vi.waitFor(() => expect(frames[0]!.win.last?.type).toBe('sign_in'));
+      const other = '0x0000000000000000000000000000000000000abc';
+      frames[0]!.win.reply({ type: 'authenticated', id: frames[0]!.win.last.id, address: other, user_id: 'did:lowki:other', access_token: 't' });
+      await expect(signed).rejects.toMatchObject({ code: PrivyErrorCode.EMBEDDED_WALLET_NOT_FOUND });
+      expect(frames[0]!.win.sent.some((s) => s.msg.type === 'sign_message')).toBe(false);
+      expect(client.getState().user?.wallet?.address).toBe(other);
+    });
+
+    it('an iframe that lost its session (not_signed_in) is signed in again and the request retried', async () => {
+      const { client, frames, start, userSignsIn, walletForgets } = setup({ capabilities: ALL, walletSession: true });
+      await start();
+      walletForgets();
+      const signed = client.signMessage({ message: 'hi' });
+      await vi.waitFor(() => expect(frames[0]!.win.last?.type).toBe('sign_in'));
+      userSignsIn(frames[0]!);
+      expect(await signed).toEqual({ signature: '0x' + 'ab'.repeat(65) });
+    });
   });
 });

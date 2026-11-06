@@ -97,6 +97,10 @@ export function fromReject(kind: 'login' | 'sign' | 'transaction' | 'other', rea
         rpcCode: RpcErrorCode.RESOURCE_UNAVAILABLE,
         reason,
       });
+    case 'unsupported_chain':
+      return new LowkiError(PrivyErrorCode.UNSUPPORTED_CHAIN_ID, message || 'The wallet is on another chain', { rpcCode: RpcErrorCode.UNRECOGNIZED_CHAIN, reason });
+    case 'invalid_request':
+      return new LowkiError(PrivyErrorCode.INVALID_DATA, message || 'The wallet refused a malformed request', { rpcCode: RpcErrorCode.INVALID_PARAMS, reason });
     case 'network_error':
     default:
       return new LowkiError(kind === 'transaction' ? PrivyErrorCode.TRANSACTION_FAILURE : PrivyErrorCode.UNKNOWN_EMBEDDED_WALLET_ERROR, message || 'Network error', {

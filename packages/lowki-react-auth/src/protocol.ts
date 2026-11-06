@@ -5,8 +5,10 @@
  * Every message is `{ lowki: 1, type: "<snake_case>", ...fields }`. Requests
  * carry an `id` and the wallet echoes it in the answer.
  *
- * Fields marked "proposed" are not in protocol v1 yet. The SDK sends or reads
- * them only when the wallet advertises support, and tolerates their absence.
+ * Additions after the first v1 wallet (`get_session`, `cancel`, `send_privately`,
+ * `chain_id`, `ready.capabilities`, the extra `authenticated` fields) are
+ * optional: the SDK sends a new request type only when `ready.capabilities`
+ * lists it, and tolerates missing fields from older wallets.
  */
 
 export const PROTOCOL_VERSION = 1 as const;
@@ -35,24 +37,35 @@ export interface DelegationPolicy {
 /** App -> wallet. */
 export type DappToWallet =
   | { type: 'sign_in'; id: string }
+  /** Silent: answers `authenticated` (fresh token) or `rejected{not_signed_in}`, never shows UI. */
+  | { type: 'get_session'; id: string }
   | { type: 'sign_message'; id: string; message: string }
-  | { type: 'sign_typed_data'; id: string; typed_data: unknown }
-  | { type: 'send_transaction'; id: string; tx: WireTxRequest }
+  | { type: 'sign_typed_data'; id: string; typed_data: unknown; chain_id?: number }
+  | { type: 'send_transaction'; id: string; tx: WireTxRequest; chain_id?: number }
   | { type: 'request_delegation'; id: string; policy: DelegationPolicy }
   | { type: 'sign_out'; id: string }
-  /** Proposed (not in protocol v1): a private transfer through Privacy Pools. */
-  | { type: 'send_privately'; id: string; to: string; amount: string; asset: string };
+  /** The app closed its modal: the wallet drops the open request `id`. No answer is awaited. */
+  | { type: 'cancel'; id: string }
+  /** A private transfer through Privacy Pools. Answered with `private_sent`. */
+  | { type: 'send_privately'; id: string; to: string; amount: string; asset: string; chain_id?: number };
 
 export type DappRequestType = DappToWallet['type'];
 
-export type RejectReason = 'user_rejected' | 'policy_rejected' | 'not_signed_in' | 'network_error' | 'busy';
+export type RejectReason =
+  | 'user_rejected'
+  | 'policy_rejected'
+  | 'not_signed_in'
+  | 'network_error'
+  | 'busy'
+  | 'unsupported_chain'
+  | 'invalid_request';
 
 /** Wallet -> app. */
 export type WalletToDapp =
   | {
       type: 'ready';
       app_id: string;
-      /** Proposed: request types this wallet build understands. Absent in v1. */
+      /** Request types this wallet build understands. Absent in the first v1 wallets. */
       capabilities?: string[];
     }
   | {
@@ -61,17 +74,17 @@ export type WalletToDapp =
       address: string;
       user_id: string;
       access_token: string;
-      /** Proposed: only present when the user chose to share it with this app. */
+      /** Only present when the user chose to share it with this app. */
       email?: string;
-      /** Proposed: ISO 8601 time the pairwise account was created. */
+      /** ISO 8601: when the wallet first saw this app account. */
       created_at?: string;
-      /** Proposed: true on the first sign-in to this app. */
+      /** True when the wallet was created in this sign-in. */
       is_new_user?: boolean;
     }
   | { type: 'message_signed'; id: string; signature: string }
   | { type: 'typed_data_signed'; id: string; signature: string }
   | { type: 'transaction_sent'; id: string; hash: string; sponsored: boolean }
-  /** Proposed answer to `send_privately`. `transaction_sent` is accepted too. */
+  /** Answer to `send_privately`. `transaction_sent` is accepted too. */
   | { type: 'private_sent'; id: string; hash: string }
   | { type: 'delegation_approved'; id: string; delegation_id: string; expires: string; attestation_build: string }
   | { type: 'delegation_revoked'; delegation_id: string }
@@ -80,7 +93,7 @@ export type WalletToDapp =
 
 export type WalletMessageType = WalletToDapp['type'];
 
-/** Request types every v1 wallet understands (protocol.rs `DappToWallet`). */
+/** Request types every v1 wallet understands, including ones that predate `capabilities`. */
 export const V1_CAPABILITIES: readonly DappRequestType[] = [
   'sign_in',
   'sign_message',
@@ -93,6 +106,8 @@ export const V1_CAPABILITIES: readonly DappRequestType[] = [
 /** Which answer types complete each request type (besides `rejected`). */
 export const ANSWERS: Record<DappRequestType, readonly WalletMessageType[]> = {
   sign_in: ['authenticated'],
+  get_session: ['authenticated'],
+  cancel: [],
   sign_message: ['message_signed'],
   sign_typed_data: ['typed_data_signed'],
   send_transaction: ['transaction_sent'],
@@ -101,7 +116,15 @@ export const ANSWERS: Record<DappRequestType, readonly WalletMessageType[]> = {
   send_privately: ['private_sent', 'transaction_sent'],
 };
 
-const REASONS: readonly RejectReason[] = ['user_rejected', 'policy_rejected', 'not_signed_in', 'network_error', 'busy'];
+const REASONS: readonly RejectReason[] = [
+  'user_rejected',
+  'policy_rejected',
+  'not_signed_in',
+  'network_error',
+  'busy',
+  'unsupported_chain',
+  'invalid_request',
+];
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === 'string';

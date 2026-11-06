@@ -13,7 +13,7 @@ import { LowkiError, PrivyErrorCode, RpcErrorCode } from './errors';
 import { jsonSafe, sameAddress, toWireTx } from './encoding';
 import { LowkiEthereumProvider } from './provider';
 import type { DelegationPolicy, WalletToDapp, WireTxRequest } from './protocol';
-import { Transport, type Channel, type MessageHost } from './transport';
+import { Transport, type Channel, type MessageHost, type RequestBody } from './transport';
 import type {
   ConnectedWallet,
   DelegationResult,
@@ -135,6 +135,12 @@ export class LowkiClient {
   private loginInFlight: Promise<void> | null = null;
   private walletObj: ConnectedWallet | null = null;
   private connectedAt = 0;
+  /**
+   * The app has a session the iframe doesn't (sign-in happened in a popup, which
+   * has its own document and key worker). The next iframe request first signs
+   * the iframe in: a passkey `get`, which works in a cross-origin iframe.
+   */
+  private iframeNeedsSession = false;
 
   constructor(opts: ClientOptions) {
     if (!opts.appId) throw new LowkiError(PrivyErrorCode.MISSING_OR_INVALID_PRIVY_APP_ID, 'PrivyProvider/LowkiProvider needs an appId');
@@ -219,11 +225,7 @@ export class LowkiClient {
     const t = this.transport;
     t.connect().then(
       async () => {
-        if (lk.restoreSession !== false && !this.session) {
-          // v1 has no silent session query: `sign_in` re-announces an existing
-          // session at once, and otherwise just parks the (hidden) sign-in sheet.
-          await t.request({ type: 'sign_in' }, { interactive: false, timeoutMs: 1500, errorKind: 'login' }).catch(() => undefined);
-        }
+        if (lk.restoreSession !== false && !this.session) await this.probeSession(t, 1500);
         if (this.transport === t) this.set({ ready: true });
       },
       (e: Error) => {
@@ -231,6 +233,22 @@ export class LowkiClient {
         if (this.transport === t) this.set({ ready: true, error: e });
       },
     );
+  }
+
+  /**
+   * Asks the iframe for its session without showing anything: `get_session`
+   * when the wallet supports it. Older wallets only have `sign_in`, which
+   * re-announces an existing session at once and otherwise parks the hidden
+   * sign-in sheet. Resolves with the announcement, or null.
+   */
+  private async probeSession(t: Transport, timeoutMs: number): Promise<Extract<WalletToDapp, { type: 'authenticated' }> | null> {
+    const type = t.supports('get_session') ? 'get_session' : 'sign_in';
+    try {
+      const m = await t.request({ type }, { interactive: false, timeoutMs, errorKind: 'login' });
+      return m.type === 'authenticated' ? m : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Mirrors the wallet's visibility into `modalOpen` (Privy's `isModalOpen`). */
@@ -286,6 +304,7 @@ export class LowkiClient {
       if (!same) this.provider.emit('accountsChanged', [m.address]);
       if (!prev) this.provider.emit('connect', { chainId: `0x${this.provider.chainId.toString(16)}` });
     } else if (m.type === 'signed_out') {
+      this.iframeNeedsSession = false;
       this.clearSession();
     }
   }
@@ -414,9 +433,10 @@ export class LowkiClient {
     const iframeBroken = !!iframe?.failed;
     const popup = mode === 'always' || (mode === 'auto' && (iframeBroken || needsPopupForPasskeyCreate(this.opts.userAgent)));
     const via = popup ? t.openPopup() : undefined;
-    return t.request({ type: 'sign_in' }, { interactive: true, via, errorKind: 'login' }).then((m) => {
+    return t.request({ type: 'sign_in' }, { interactive: true, via, errorKind: 'login' }).then(async (m) => {
       if (m.type !== 'authenticated') return;
       this.onWalletEvent(m); // also delivered via onEvent; idempotent
+      if (via) await this.checkIframeAfterPopup(t, m.address);
       const s = this.session!;
       const user = this.buildUser(s);
       const loginAccount = user.linkedAccounts[0] ?? null;
@@ -424,6 +444,58 @@ export class LowkiClient {
         l.onComplete?.({ user, isNewUser: s.isNewUser, wasAlreadyAuthenticated: false, loginMethod: null, loginAccount } satisfies LoginComplete);
       }
     });
+  }
+
+  /**
+   * After a popup sign-in: does the iframe have the same session? (It does if
+   * it was already unlocked; usually it isn't, because the popup's key worker
+   * is its own.) If not, the next iframe request signs the iframe in first.
+   */
+  private async checkIframeAfterPopup(t: Transport, address: string): Promise<void> {
+    const st = t.iframeStatus();
+    if (!st?.info) return; // no usable iframe: requests go through popups anyway
+    const m = st.info.capabilities.includes('get_session') ? await this.probeSession(t, 5000) : null;
+    this.iframeNeedsSession = !(m && sameAddress(m.address, address));
+  }
+
+  /**
+   * Hands the session to the iframe when it doesn't have it: an interactive
+   * `sign_in` there (the wallet shows its sign-in sheet; a returning user taps
+   * the passkey). Refuses to continue if a different account signed in.
+   */
+  private async ensureIframeSession(t: Transport): Promise<void> {
+    if (!this.iframeNeedsSession) return;
+    const want = this.session?.address;
+    const m = await t.request({ type: 'sign_in' }, { interactive: true, errorKind: 'login' });
+    if (m.type !== 'authenticated') return;
+    this.iframeNeedsSession = false;
+    this.onWalletEvent(m);
+    if (want && !sameAddress(want, m.address)) {
+      throw new LowkiError(PrivyErrorCode.EMBEDDED_WALLET_NOT_FOUND, 'A different Lowki account signed in; the request was not sent', {
+        rpcCode: RpcErrorCode.UNAUTHORIZED,
+      });
+    }
+  }
+
+  /**
+   * An interactive request to the wallet. Synchronous up to `via()`, which may
+   * open a popup and so must run inside the click. If the iframe answers
+   * `not_signed_in` while the app has a session, it is signed in and the
+   * request sent again, once.
+   */
+  private async walletRequest(body: RequestBody, errorKind: 'sign' | 'transaction' | 'other'): Promise<WalletToDapp> {
+    const t = this.requireTransport();
+    const via = this.via(t);
+    if (via) return t.request(body, { interactive: true, via, errorKind });
+    await this.ensureIframeSession(t);
+    try {
+      return await t.request(body, { interactive: true, errorKind });
+    } catch (e) {
+      if (!(e instanceof LowkiError && e.reason === 'not_signed_in' && this.session)) throw e;
+      this.iframeNeedsSession = true;
+      await this.ensureIframeSession(t);
+      return t.request(body, { interactive: true, errorKind });
+    }
   }
 
   async logout(): Promise<void> {
@@ -447,16 +519,10 @@ export class LowkiClient {
     if (exp === null || exp - 30 > Date.now() / 1000) return s.accessToken;
     const t = this.transport;
     if (!t) return null;
-    try {
-      const m = await t.request({ type: 'sign_in' }, { interactive: false, timeoutMs: 5000, errorKind: 'login' });
-      if (m.type === 'authenticated') {
-        this.onWalletEvent(m);
-        return m.access_token;
-      }
-    } catch {
-      /* fall through */
-    }
-    return null;
+    const m = await this.probeSession(t, 5000);
+    if (!m) return null;
+    this.onWalletEvent(m);
+    return m.access_token;
   }
 
   // ------------------------------------------------------------ signing
@@ -480,22 +546,19 @@ export class LowkiClient {
 
   private async rawSignMessage(message: string): Promise<Hex> {
     this.checkAddress();
-    const t = this.requireTransport();
-    const m = await t.request({ type: 'sign_message', message }, { interactive: true, via: this.via(t), errorKind: 'sign' });
+    const m = await this.walletRequest({ type: 'sign_message', message }, 'sign');
     return (m as Extract<WalletToDapp, { type: 'message_signed' }>).signature as Hex;
   }
 
   private async rawSignTypedData(typed: unknown): Promise<Hex> {
     this.checkAddress();
-    const t = this.requireTransport();
-    const m = await t.request({ type: 'sign_typed_data', typed_data: typed }, { interactive: true, via: this.via(t), errorKind: 'sign' });
+    const m = await this.walletRequest({ type: 'sign_typed_data', typed_data: typed, chain_id: this.provider.chainId }, 'sign');
     return (m as Extract<WalletToDapp, { type: 'typed_data_signed' }>).signature as Hex;
   }
 
   private async rawSendTransaction(tx: WireTxRequest): Promise<Hex> {
     this.checkAddress();
-    const t = this.requireTransport();
-    const m = await t.request({ type: 'send_transaction', tx }, { interactive: true, via: this.via(t), errorKind: 'transaction' });
+    const m = await this.walletRequest({ type: 'send_transaction', tx, chain_id: this.provider.chainId }, 'transaction');
     return (m as Extract<WalletToDapp, { type: 'transaction_sent' }>).hash as Hex;
   }
 
@@ -525,16 +588,14 @@ export class LowkiClient {
       throw new LowkiError(PrivyErrorCode.INVALID_DATA, 'sendPrivately: `amount` must be a positive decimal string such as "12.5"', { rpcCode: RpcErrorCode.INVALID_PARAMS });
     }
     const asset = input.asset ?? this.provider.chain.nativeCurrency.symbol;
-    const t = this.requireTransport();
-    const m = await t.request({ type: 'send_privately', to: input.to, amount: input.amount, asset }, { interactive: true, via: this.via(t), errorKind: 'transaction' });
+    const m = await this.walletRequest({ type: 'send_privately', to: input.to, amount: input.amount, asset, chain_id: this.provider.chainId }, 'transaction');
     return { hash: (m as { hash: string }).hash as Hex };
   }
 
   /** Lowki-only: ask the user for a policy-limited signer (Privy "session signers"). */
   async requestDelegation(policy: DelegationPolicy): Promise<DelegationResult> {
     this.checkAddress();
-    const t = this.requireTransport();
-    const m = await t.request({ type: 'request_delegation', policy }, { interactive: true, via: this.via(t), errorKind: 'other' });
+    const m = await this.walletRequest({ type: 'request_delegation', policy }, 'other');
     const d = m as Extract<WalletToDapp, { type: 'delegation_approved' }>;
     return { delegationId: d.delegation_id, expires: d.expires, attestationBuild: d.attestation_build };
   }

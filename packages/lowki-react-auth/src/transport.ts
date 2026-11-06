@@ -229,13 +229,27 @@ export class Transport {
     return p;
   }
 
-  /** Rejects the open interactive request(s), e.g. when the user closes the modal. */
+  /**
+   * Rejects the open interactive request(s), e.g. when the user closes the modal,
+   * and tells a wallet that supports `cancel` to close its sheet, so the next
+   * request doesn't get `busy`.
+   */
   cancelInteractive(message: string): void {
-    for (const p of this.pending.values()) {
+    for (const p of [...this.pending.values()]) {
       if (!p.interactive) continue;
+      this.notify(p.channel, { type: 'cancel', id: p.id });
       const kind = p.type === 'sign_in' ? PrivyErrorCode.USER_EXITED_AUTH_FLOW : PrivyErrorCode.UNABLE_TO_SIGN;
       this.settle(p, null, new LowkiError(kind, message, { rpcCode: RpcErrorCode.USER_REJECTED, reason: 'closed' }));
     }
+  }
+
+  /** Posts a message that has no answer (only if the wallet announced that type). */
+  private notify(st: ChannelState, msg: DappToWallet): void {
+    if (!st.info?.capabilities.includes(msg.type)) return;
+    const win = st.ch.window();
+    if (!win || win.closed) return;
+    this.log('→', msg.type, msg.id);
+    win.postMessage(envelope(msg), this.walletOrigin);
   }
 
   destroy(): void {

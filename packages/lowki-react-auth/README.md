@@ -39,7 +39,7 @@ Your app receives:
 |---|---|
 | `user.id` | Pairwise: `did:lowki:<32 hex>`. Stable for your app; a different value in every other app. |
 | `user.wallet.address` | Your app's own account, also different in every app |
-| `user.email` | Set only if the user chooses to share it (not in protocol v1 yet, so currently never set) |
+| `user.email` | Set only if the user ticks "Share this email with *App*" when signing in with an email code |
 
 The wallet shows its own confirmation sheet for every signature and transaction. Any `uiOptions` you pass are accepted but have no effect.
 
@@ -61,12 +61,12 @@ The coverage comes from the TypeScript compiler, comparing `@privy-io/react-auth
 | `usePrivy`: MFA (`enrollInMfa`, `promptMfa`, …), the other `link*` / `unlink*` methods, `exportWallet`, `setWalletRecovery`, `signTransaction`, `updateEmail` | not yet | 56 of Privy's 71 members are missing. Most don't fit the model: the passkey is the second factor, and recovery uses the 2-of-3 shares. |
 | `useWallets` → `ConnectedWallet` (`address`, `chainId` (CAIP-2), `walletClientType: 'privy'`, `connectorType: 'embedded'`, `switchChain`, `getEthereumProvider`, `sign`, `isConnected`, `disconnect`) | supported | `walletClientType` is `'privy'` so that `wallets.find(w => w.walletClientType === 'privy')` keeps working. `meta.name` is `'Lowki'`. |
 | `ConnectedWallet.fund`, `unlink` | not yet | These throw `not_supported`. |
-| `useLogin({ onComplete, onError })`, `useLogout({ onSuccess })` | supported | `onComplete` gets `isNewUser: false` and `loginMethod: null`, because the protocol doesn't report them. |
+| `useLogin({ onComplete, onError })`, `useLogout({ onSuccess })` | supported | `isNewUser` is true when the wallet was created in this sign-in. `loginMethod` is `null` (the wallet doesn't report it). |
 | `useSignMessage`, `useSignTypedData`, `useSendTransaction` (with callbacks) | supported | |
 | `getAccessToken` (standalone export), `useToken`, `useUser` | supported | |
 | `useCreateWallet`, `useActiveWallet`, `useModalStatus`, `getEmbeddedConnectedWallet` | supported | There is one wallet per app. |
 | `useIdentityToken` | partial | Always `null`. An identity token would link the user across apps. |
-| `User` shape (`id`, `createdAt`, `wallet`, `linkedAccounts`, `mfaMethods`, `isGuest`, `hasAcceptedTerms`, and the `google`/`twitter`/`phone`/… fields) | supported | `linkedAccounts` contains only the wallet. OAuth and phone fields stay `undefined` but are typed, so code that checks them compiles. `createdAt` is the first time this SDK saw the session (the protocol has no creation time). |
+| `User` shape (`id`, `createdAt`, `wallet`, `linkedAccounts`, `mfaMethods`, `isGuest`, `hasAcceptedTerms`, and the `google`/`twitter`/`phone`/… fields) | supported | `linkedAccounts` contains only the wallet. OAuth and phone fields stay `undefined` but are typed, so code that checks them compiles. `createdAt` is the wallet's `created_at`: when this wallet first saw the app account (lowki-server's per-app creation time isn't exposed yet). |
 | `PrivyErrorCode` | partial | The same string values as Privy for every code Lowki emits. |
 | EIP-1193 provider: `eth_accounts`, `eth_requestAccounts`, `eth_chainId`, `net_version`, `personal_sign`, `eth_signTypedData_v4`, `eth_sendTransaction`, `wallet_switchEthereumChain`, `wallet_addEthereumChain` (configured chains), `wallet_getPermissions`; read calls (`eth_call`, `eth_getBalance`, `eth_estimateGas`, `eth_getLogs`, … 33 in total) forwarded to the chain RPC | supported | See [Provider limits](#provider-limits). |
 | `eth_sign`, `eth_signTransaction`, `wallet_sendCalls`, `eth_subscribe` | not yet | These return 4200. |
@@ -87,7 +87,7 @@ const { requestDelegation } = useRequestDelegation();
 await requestDelegation({ chain: 'sepolia', expires: '2026-12-31', rules: [{ kind: 'transfer', to: '0x…', token: 'USDC', max_per_day: '50' }] });
 ```
 
-`sendPrivately` needs a wallet that supports `send_privately`. The current wallet-ui (protocol v1) doesn't, so the call fails at once with `not_supported` (see [Protocol additions needed](#protocol-additions-needed)).
+`sendPrivately` needs a wallet that announces `send_privately` in `ready.capabilities` (wallet-ui does). An older wallet makes the call fail at once with `not_supported`. The wallet shows its own "Send privately?" sheet, then answers `private_sent`, or `rejected` with its reason (for example when its Privacy Pools relayer isn't configured).
 
 ## How it works
 
@@ -100,6 +100,8 @@ The SDK mounts the wallet in a hidden iframe from `walletUrl` (`?app=<appId>&ori
   - you set `config.lowki.popup: 'always'`.
 
   Opening the popup happens synchronously inside `login()`, so call `login()` from a click handler.
+- **Session hand-off, popup to iframe.** The popup and the iframe are separate documents, each with its own key worker; the seed never leaves the worker, so it isn't passed between them. After a popup sign-in the SDK asks the iframe with `get_session`. If the iframe has no session, the next request first sends `sign_in` to the iframe: the wallet shows its sign-in sheet and a returning user taps the passkey (`get` works in a cross-origin iframe, Safari included; only `create` needs the popup). That unlocks the iframe's worker and gives it its own server session cookie (in its own partition when the wallet is cross-site). If a different account signs in there, the request isn't sent and fails with `embedded_wallet_not_found`. The same recovery runs whenever the iframe answers `not_signed_in` while the app has a session (for example after the wallet frame reloaded).
+- **Closing the modal** sends `cancel { id }` for the open request, so the wallet closes its sheet and the next request doesn't get `busy`.
 - **Security, in both directions:**
   - Every message is posted with `targetOrigin` set to the wallet origin, never `*`.
   - An incoming message is accepted only if all of these hold:
@@ -129,6 +131,8 @@ The provider throws `ProviderRpcError` with the numeric code, so viem and wagmi 
 | `user_rejected` (sign-in) or the modal/popup was closed | `exited_auth_flow` | 4001 |
 | `user_rejected` (signature or transaction) | `unable_to_sign` | 4001 |
 | `not_signed_in` | `must_be_authenticated` | 4100 |
+| `unsupported_chain` (the wallet is on another chain) | `unsupported_chain_id` | 4902 |
+| `invalid_request` (bad amount or asset, typed-data domain on another chain) | `invalid_data` | -32602 |
 | address not this app's account | `embedded_wallet_not_found` | 4100 |
 | `busy` | `too_many_requests` | -32002 |
 | `policy_rejected` | `invalid_data` | -32602 |
@@ -143,7 +147,7 @@ These come from protocol v1:
 
 - `personal_sign` signs UTF-8 text. Hex input is decoded and must be valid UTF-8; raw byte messages are refused with -32602.
 - `eth_sendTransaction` passes only `to`, `value` and `data` to the wallet. `gas`, `nonce` and the fee fields are dropped, and contract deployment (no `to`) is refused.
-- The wallet doesn't know about chains. `switchChain` changes what the app sees (`eth_chainId`, the RPC used for reads) but not where the wallet sends.
+- `send_transaction`, `sign_typed_data` and `send_privately` carry the provider's `chain_id`. The wallet sends on one chain (Sepolia by default) and answers `unsupported_chain` for any other, so `switchChain` to a chain the wallet isn't on makes sends fail with 4902 instead of going to the wrong chain. A typed-data domain whose `chainId` differs from the provider's is refused.
 
 ## Verify the access token on your backend
 
@@ -197,25 +201,40 @@ The type-compatibility proof and the end-to-end test live in `examples/privy-swa
   ```sh
   cd examples/privy-swap && npm install && npm run typecheck
   ```
-- **End to end.** This runs headless Chrome against the wallet-ui mock backend and against a protocol-conformant reference wallet that signs with a real key (`e2e/reference-wallet`):
+- **End to end against the real wallet** (`e2e/real.mjs`, raw CDP, a virtual authenticator with PRF): wallet-ui with its real backend (key worker + lowki-server), a local anvil posing as Sepolia, and the example app. It checks login (email code + passkey; the JWT verifies against the JWKS), `signMessage`, `signTypedData`, `sendTransaction` (mined on anvil, from the app address), `sendPrivately` (a protocol round trip), and the Safari popup path with the hand-off to the iframe. Ports 8800–8809:
+
+  ```sh
+  examples/privy-swap/e2e/real-server.sh &        # lowki-server :8801 (VM or host), fresh database
+  (cd apps/wallet-ui && LOWKI_RPC_URL=http://localhost:8800/rpc trunk build --release --dist ../../target/privy-swap-e2e/wallet-dist)
+  cd examples/privy-swap && npm run build && node e2e/real.mjs   # on the macOS host (Chrome, anvil)
+  ```
+- **Run it yourself against the real wallet:** `examples/privy-swap/scripts/dev-real.sh` (add `ANVIL=1` for a local chain) starts lowki-server with the example's origin registered, the wallet on :8800 and the example on :8802, and prints the URL to open. Email codes appear in its output.
+- **End to end against the mock and a reference wallet.** This runs headless Chrome against the wallet-ui mock backend and against a protocol-conformant reference wallet that signs with a real key (`e2e/reference-wallet`):
 
   ```sh
   (cd apps/wallet-ui && trunk build --release --dist ../../target/react-auth-e2e/wallet-dist)
   cd examples/privy-swap && npm run build && node e2e/run.mjs
   ```
 
-## Protocol additions needed
+## Protocol status
 
-These are gaps in the wallet-ui protocol (`apps/wallet-ui/src/protocol.rs`) that the SDK works around or reports.
+The wallet-ui protocol lives in `apps/wallet-ui/src/protocol.rs`. Every addition is optional on the wire: old messages parse unchanged, and the SDK uses a new request type only when `ready.capabilities` lists it.
 
-1. **`send_privately { id, to, amount, asset }` → `private_sent { id, hash }`.** There is no app-initiated private send; the wallet only has its own Send screen, so `useSendPrivately` can't complete against wallet-ui. The SDK already sends this message and also accepts `transaction_sent` as the answer. `WalletBackend::send` with `private: true` already exists.
-2. **`capabilities: string[]` on `ready`.** This lets the SDK know which request types a wallet build supports. Without it, the SDK assumes the v1 set and refuses `send_privately` locally with `not_supported` (wallet-ui silently drops unknown types, which would otherwise hang until the timeout).
-3. **A silent session query, `get_session { id }`.** It would answer `authenticated` or `rejected{not_signed_in}` without showing UI. Today the SDK probes with `sign_in` on load, which re-announces an existing session but otherwise moves the hidden wallet to its sign-in sheet. The same message would also refresh an expired access token silently.
-4. **`cancel { id }`.** When the user closes the SDK's modal, the wallet keeps its confirmation sheet open, so the next request gets `busy`.
-5. **Popup → app replies are broken in wallet-ui.** `protocol::post` does `win.opener().dyn_into::<web_sys::Window>()`. For a cross-origin opener that `instanceof` check fails (verified: `window.opener instanceof Window === false`), so in a popup the wallet treats itself as standalone and posts nothing, not even `ready`. The fix is `unchecked_into` after a null check.
-6. **Session hand-off between popup and iframe.** After a popup sign-in (Safari), the iframe has no session, and every request gets `not_signed_in`. The protocol needs a way for the iframe to pick up the session: the Storage Access API, a shared session cookie with `Partitioned`, or a `get_session` that unlocks with the passkey (`get` is allowed in cross-origin iframes).
-7. **More fields on `authenticated`:** `created_at`, `is_new_user` and `email` (only when the user chose to share it). The SDK already reads them if present.
-8. **Chain on requests.** `send_transaction` and `sign_typed_data` carry no `chain_id`, and `tx` has no `gas`, `nonce` or fee fields.
-9. **Raw-byte `personal_sign`.** `sign_message.message` is a string, so non-UTF-8 payloads can't be signed.
-10. **Request-time UI options.** There is nothing like Privy's `uiOptions` (title, description) for the confirmation sheet.
-11. **(mock only)** The mock's `sign_message` and `sign_typed_data` return FNV-hash hex, not ECDSA, and its addresses aren't derived from a key, so signatures from the mock never verify. The real worker fixes this.
+Done:
+
+1. **`send_privately { id, to, amount, asset, chain_id? }` → `private_sent { id, hash }`**, after the wallet's "Send privately?" sheet. It runs the wallet backend's private send.
+2. **`capabilities: string[]` on `ready`.**
+3. **`get_session { id }`**: answers `authenticated` (re-issuing an access token with less than a minute left) or `rejected { not_signed_in }`, without UI. The SDK uses it on load and in `getAccessToken`.
+4. **`cancel { id }`**: closes the sheet for that request and answers it `rejected { user_rejected }`.
+5. **Popup replies**: `protocol::post` takes the opener after a null check and `unchecked_into` (a cross-origin opener fails `instanceof Window`).
+6. **Session hand-off between popup and iframe**: see [How it works](#how-it-works). The iframe signs itself in with the passkey; no secret crosses documents.
+7. **`authenticated` carries `created_at`, `is_new_user`, and `email`** (only when the user shared it).
+8. **`chain_id`** on `sign_typed_data`, `send_transaction` and `send_privately`, with the new reject reasons `unsupported_chain` and `invalid_request`.
+
+Still open:
+
+- `tx` has no `gas`, `nonce` or fee fields; the wallet estimates them.
+- `sign_message.message` is a string, so non-UTF-8 payloads can't be signed.
+- No request-time UI options like Privy's `uiOptions`.
+- `created_at` is when this wallet (this browser's storage for the app) first saw the account, and `is_new_user` means "the wallet was created in this sign-in". lowki-server knows the real per-app values (`app_users.created_at`, and whether `issue_token` inserted the row) but doesn't return them from `POST /v1/apps/{id}/token` yet.
+- (mock only) The mock's `sign_message` and `sign_typed_data` return FNV-hash hex, not ECDSA, and its addresses aren't derived from a key, so signatures from the mock never verify. The real backend's do.
