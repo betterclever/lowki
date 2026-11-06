@@ -91,62 +91,84 @@ async function waitFor(expr, ms = 60000) {
   return false;
 }
 
-const configs = [];
-for (const w of [1440, 390]) for (const theme of ["dark", "light"]) configs.push({ w, h: w === 1440 ? 900 : 844, dpr: w === 1440 ? 1 : 2, mobile: w < 600, theme });
+const configs = [{ w: 1440, h: 900, dpr: 1, mobile: false }, { w: 390, h: 844, dpr: 2, mobile: true }];
+const SCREENCAST = process.env.SCREENCAST !== "0";
 for (const c of configs) {
-  const base = `${c.w}-${c.theme}`;
-  if (ONLY && ONLY !== base) continue;
-  const tag = (process.env.PREFIX ?? "") + base;
+  const tag = (process.env.PREFIX ?? "") + c.w;
+  if (ONLY && ONLY !== String(c.w)) continue;
   console.log(tag);
   await send("Emulation.setDeviceMetricsOverride", { width: c.w, height: c.h, deviceScaleFactor: c.dpr, mobile: c.mobile });
-  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: c.theme }, { name: "prefers-reduced-motion", value: process.env.REDUCED === "1" ? "reduce" : "no-preference" }] });
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: process.env.REDUCED === "1" ? "reduce" : "no-preference" }] });
   await send("Page.navigate", { url: URL0 });
-  await waitFor("document.readyState === 'complete'");
-  await waitFor("document.documentElement.dataset.heroGpu !== undefined && document.documentElement.dataset.visGpu !== undefined", 15000);
-  await sleep(1200);
-  await shot(`${tag}-hero`);
-  // scroll through once so reveal-on-scroll content is in, then full page
-  const H = await evaluate("document.documentElement.scrollHeight");
-  for (let y = 0; y < H; y += c.h * 0.7) { await evaluate(`window.scrollTo(0, ${y})`); await sleep(60); }
-  await evaluate("window.scrollTo(0, 0)");
-  await sleep(300);
-  await shot(`${tag}-page`, true);
+  await waitFor("document.readyState === 'complete' && document.documentElement.classList.contains('ready')", 20000);
+  await evaluate("document.documentElement.style.scrollBehavior = 'auto'");
+  await sleep(1500);
+  const n = await evaluate("document.querySelectorAll('.scene').length");
+  const tops = await evaluate("[...document.querySelectorAll('.scene')].map(s => s.offsetTop)");
+  for (let k = 0; k < n; k++) {
+    await evaluate(`window.scrollTo(0, ${tops[k]})`);
+    await sleep(1400);
+    await shot(`${tag}-scene${k}`);
+    if (k === 0 && !c.mobile) {
+      // the cursor parts the lauki
+      const r = await evaluate("(() => { const b = document.querySelector('.s0 .art').getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; })()");
+      for (let j = 0; j <= 10; j++) { await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: r[0] - 60 + j * 8, y: r[1] - 40 + j * 6 }); await sleep(40); }
+      await sleep(500);
+      await shot(`${tag}-scene0-cursor`);
+      await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 5, y: c.h - 5 });
+    }
+    if (k < n - 1 && (k % 2 === 0 || c.w === 1440)) {
+      await evaluate(`window.scrollTo(0, ${Math.round((tops[k] + tops[k + 1]) / 2)})`);
+      await sleep(250);
+      await shot(`${tag}-scene${k}-to-${k + 1}`);
+    }
+  }
+  report.stage = report.stage ?? {};
+  report.stage[tag] = await evaluate("JSON.stringify(window.__stage)");
+  if (SCREENCAST) {
+    // a scroll-through, recorded with the CDP screencast
+    const dir = join(OUT, `scroll-${tag}`);
+    mkdirSync(dir, { recursive: true });
+    let fi = 0;
+    const onFrame = async (m) => {
+      if (m.method !== "Page.screencastFrame") return;
+      send("Page.screencastFrameAck", { sessionId: m.params.sessionId }).catch(() => {});
+      if (fi < 400) writeFileSync(join(dir, `f${String(fi++).padStart(3, "0")}.jpg`), Buffer.from(m.params.data, "base64"));
+    };
+    listeners.push(onFrame);
+    await evaluate("window.scrollTo(0, 0)");
+    await sleep(500);
+    await send("Page.startScreencast", { format: "jpeg", quality: 70, maxWidth: 960, maxHeight: 600, everyNthFrame: 2 });
+    const H = await evaluate("document.documentElement.scrollHeight - innerHeight");
+    for (let y = 0; y <= H; y += 18) { await evaluate(`window.scrollTo(0, ${y})`); await sleep(16); }
+    await sleep(500);
+    await send("Page.stopScreencast");
+    listeners.splice(listeners.indexOf(onFrame), 1);
+    console.log("  screencast frames", fi);
+  }
   if (NO_RACE) continue;
-  await evaluate("document.getElementById('prove').scrollIntoView({block: 'start'})");
-  await sleep(500);
-  await shot(`${tag}-race-idle`);
+  await evaluate(`window.scrollTo(0, ${tops[6]})`);
+  await sleep(1500);
   await evaluate("document.getElementById('race-btn').click()");
-  // in progress: after Lowki's proof, while snarkjs runs and the vis replays the MSM
-  await waitFor("document.getElementById('lane-lowki').dataset.state === 'done'", 120000);
-  await sleep(350);
-  await evaluate("document.getElementById('race').scrollIntoView({block: 'start'})");
-  await sleep(150);
+  await waitFor("document.getElementById('lowki-ok') && document.getElementById('lowki-time').textContent !== '0.00' && document.getElementById('race-btn').querySelector('.label').textContent === 'Proving'", 120000);
+  await waitFor("document.getElementById('snark-time').textContent !== '0.00' && document.getElementById('snark-time').textContent !== '–'", 120000);
+  await sleep(200);
   await shot(`${tag}-race-progress`);
-  await sleep(1100);
+  await sleep(1300);
   await shot(`${tag}-race-msm`);
   await waitFor("!!window.__lowkiRace", 120000);
-  await sleep(800);
+  await sleep(350);
+  await shot(`${tag}-race-burst`);
+  await sleep(1500);
+  await shot(`${tag}-race-results`);
   const r1 = await evaluate("JSON.stringify(window.__lowkiRace)");
-  // a second, warm run (artifacts and GPU upload are cached in the page)
   await evaluate("window.__lowkiRace = null; document.getElementById('race-btn').click()");
   await waitFor("!!window.__lowkiRace", 120000);
-  await sleep(1500);
+  await sleep(1000);
   const r2 = await evaluate("JSON.stringify(window.__lowkiRace)");
-  const steps = await evaluate("[...document.querySelectorAll('.steps li')].map(l => l.querySelector('.k').textContent + ': ' + l.querySelector('.v').textContent)");
-  report.runs.push({ tag, cold: JSON.parse(r1), warm: JSON.parse(r2), steps });
-  console.log("  cold", JSON.parse(r1).lowkiMs.toFixed(1), JSON.parse(r1).snarkMs.toFixed(1), "warm", JSON.parse(r2).lowkiMs.toFixed(1), JSON.parse(r2).snarkMs.toFixed(1), "ok", JSON.parse(r2).allOk);
-  if (c.w < 600) {
-    await evaluate("document.getElementById('race-btn').scrollIntoView({block: 'start'})");
-    await sleep(200);
-    await shot(`${tag}-race-results`);
-    await evaluate("document.getElementById('race').scrollIntoView({block: 'start'})");
-    await sleep(200);
-    await shot(`${tag}-race-vis`);
-  } else {
-    await evaluate("document.getElementById('race').scrollIntoView({block: 'start'})");
-    await sleep(300);
-    await shot(`${tag}-race-results`);
-  }
+  report.runs.push({ tag, cold: JSON.parse(r1), warm: JSON.parse(r2) });
+  const p = (r) => `${r.lowkiMs.toFixed(1)} / ${r.snarkMs.toFixed(1)} ms ok=${r.allOk} ${r.backend}`;
+  console.log("  cold", p(JSON.parse(r1)), " warm", p(JSON.parse(r2)), JSON.stringify(JSON.parse(r1).setup));
 }
 writeFileSync(join(OUT, "report.json"), JSON.stringify(report, null, 1));
 console.log("external requests:", report.external.length, report.external.slice(0, 5));
