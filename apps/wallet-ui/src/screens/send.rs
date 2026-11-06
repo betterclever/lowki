@@ -214,10 +214,13 @@ pub fn Send() -> impl IntoView {
                                 <input id="amount" class="input amount" type="text" inputmode="decimal" placeholder="0.00" autocomplete="off"
                                     data-test="send-amount" prop:value=move || amount.get() on:input=move |ev| amount.set(event_target_value(&ev)) />
                                 <div class="seg" role="radiogroup" aria-label="Token">
-                                    {Token::all().into_iter().map(|t| view! {
-                                        <button type="button" role="radio" class="seg-btn" aria-checked=move || (token.get() == t).to_string()
-                                            on:click=move |_| token.set(t)>{t.symbol()}</button>
-                                    }).collect_view()}
+                                    {move || {
+                                        let tokens = balances.get().flatten().map(|b| b.tokens()).unwrap_or_else(|| Token::all().to_vec());
+                                        tokens.into_iter().map(|t| view! {
+                                            <button type="button" role="radio" class="seg-btn" aria-checked=move || (token.get() == t).to_string()
+                                                on:click=move |_| token.set(t)>{t.symbol()}</button>
+                                        }).collect_view()
+                                    }}
                                 </div>
                             </div>
                             <button class="link sm" type="button" on:click=move |_| if let Some(a) = available() { amount.set(a.fmt_plain().replace(',', "")) }>"Use max"</button>
@@ -257,7 +260,7 @@ pub fn Send() -> impl IntoView {
                             <div class="screen-head center">
                                 <span class="glyph lg"><Spinner large=true /></span>
                                 <h1 class="title" tabindex="-1">"Sending…"</h1>
-                                <p class="sub">"Submitting to Monad."</p>
+                                <p class="sub">{move || format!("Submitting to {}.", balances.get().flatten().map(|b| b.network).unwrap_or_else(|| "the network".into()))}</p>
                             </div>
                         }.into_any()
                     }

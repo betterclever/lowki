@@ -9,6 +9,12 @@ use crate::state::{Screen, ctx};
 use crate::ui::components::*;
 use crate::ui::icons::{Ic, Icon};
 
+/// "USDC or MON on Monad".
+fn fund_hint(b: &Balances) -> String {
+    let syms: Vec<&str> = b.tokens().into_iter().map(Token::symbol).collect();
+    format!("{} on {}", syms.join(" or "), b.network)
+}
+
 fn usd(cents: u64) -> String {
     format!("${}.{:02}", group_thousands((cents / 100) as u128), cents % 100)
 }
@@ -57,13 +63,14 @@ pub fn Home() -> impl IntoView {
                         _ => view! { <span class="skel w-40" aria-label="Loading balance"></span> }.into_any(),
                     }}
                 </div>
-                <p class="meta-line">{move || balances.get().and_then(Result::ok).map(|b| format!("{} in total on Monad", usd(b.usd_cents)))}</p>
+                <p class="meta-line">{move || balances.get().and_then(Result::ok).map(|b| format!("{} in total on {}", usd(b.usd_cents), b.network))}</p>
             </div>
             <div class="actions">
                 <Btn label="Send".to_string() icon=Ic::ArrowUpRight test="send" on_click=move || c.go(Screen::Send) />
                 <Btn label="Receive".to_string() kind="secondary" icon=Ic::ArrowDownLeft on_click=move || {
                     copy_text(&address());
-                    c.say("Address copied. Send USDC or MON on Monad to it.");
+                    let what = balances.get_untracked().and_then(Result::ok).map(|b| fund_hint(&b)).unwrap_or_else(|| "funds".into());
+                    c.say(format!("Address copied. Send {what} to it."));
                 } />
             </div>
             {move || balances.get().and_then(Result::ok).map(|b| view! { <Vault b=b.clone() /> <Tokens b=b /> })}
@@ -93,11 +100,12 @@ pub fn Home() -> impl IntoView {
 #[component]
 fn Tokens(b: Balances) -> impl IntoView {
     let empty = b.public.iter().all(|a| a.units == 0);
+    let hint = fund_hint(&b);
     view! {
         <section class="section" aria-labelledby="tok-h">
             <h2 id="tok-h" class="label">"In this account"</h2>
             <ul class="list">
-                {Token::all().into_iter().map(|t| {
+                {b.tokens().into_iter().map(|t| {
                     let a = b.public_of(t);
                     view! {
                         <li class="row">
@@ -109,7 +117,7 @@ fn Tokens(b: Balances) -> impl IntoView {
                 }).collect_view()}
             </ul>
             {empty.then(|| view! {
-                <p class="fine left">"This account is empty. Copy the address above and send USDC or MON on Monad to add funds."</p>
+                <p class="fine left">{format!("This account is empty. Copy the address above and send {hint} to add funds.")}</p>
             })}
         </section>
     }

@@ -12,7 +12,7 @@ use crate::screens::confirm::{ConfirmMessage, ConfirmTx, ConfirmTyped};
 use crate::screens::delegation::DelegationConsent;
 use crate::screens::errors::ErrorScreen;
 use crate::screens::home::Home;
-use crate::screens::onboarding::{EmailCode, Recovery, SecureWallet, SignIn, Unlock};
+use crate::screens::onboarding::{EmailCode, RecoverCode, Recovery, SecureWallet, SignIn, Unlock};
 use crate::screens::send::{Send, VaultMoveScreen};
 use crate::screens::settings::Settings;
 use crate::state::{Ctx, Screen};
@@ -82,6 +82,7 @@ fn focus_heading() {
 #[component]
 pub fn App(flags: Flags) -> impl IntoView {
     let c = Ctx::new(flags.app.clone(), flags.platform.unwrap_or_else(Platform::detect), flags.origin.clone());
+    c.show_google.set(flags.google);
     provide_context(c);
     dev::apply_initial(c, &flags);
 
@@ -108,6 +109,7 @@ pub fn App(flags: Flags) -> impl IntoView {
                     Screen::Unlock => view! { <Unlock /> }.into_any(),
                     Screen::SecureWallet => view! { <SecureWallet /> }.into_any(),
                     Screen::Recovery => view! { <Recovery /> }.into_any(),
+                    Screen::RecoverCode => view! { <RecoverCode /> }.into_any(),
                     Screen::Home => view! { <Home /> }.into_any(),
                     Screen::Send => view! { <Send /> }.into_any(),
                     Screen::Vault(d) => view! { <VaultMoveScreen direction=d /> }.into_any(),

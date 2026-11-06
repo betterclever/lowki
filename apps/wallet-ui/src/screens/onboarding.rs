@@ -105,12 +105,14 @@ pub fn SignIn() -> impl IntoView {
                     {move || if passkey_busy.get() { view! { <Spinner /> }.into_any() } else { view! { <Icon i=Ic::Passkey /> }.into_any() }}
                     <span>{move || if passkey_busy.get() { "Waiting for your passkey…" } else { "Continue with passkey" }}</span>
                 </button>
-                <button class="btn secondary" type="button" data-test="google"
-                    disabled=move || any_busy.get() aria-busy=move || google_busy.get().to_string()
-                    on:click=move |_| google()>
-                    {move || if google_busy.get() { view! { <Spinner /> }.into_any() } else { view! { <Icon i=Ic::Google /> }.into_any() }}
-                    <span>{move || if google_busy.get() { "Waiting for Google…" } else { "Continue with Google" }}</span>
-                </button>
+                {move || c.show_google.get().then(|| view! {
+                    <button class="btn secondary" type="button" data-test="google"
+                        disabled=move || any_busy.get() aria-busy=move || google_busy.get().to_string()
+                        on:click=move |_| google()>
+                        {move || if google_busy.get() { view! { <Spinner /> }.into_any() } else { view! { <Icon i=Ic::Google /> }.into_any() }}
+                        <span>{move || if google_busy.get() { "Waiting for Google…" } else { "Continue with Google" }}</span>
+                    </button>
+                })}
                 {move || google_busy.get().then(|| view! {
                     <p class="hint" role="status">"Finish in the Google window. Google confirms it's you; it can't open your wallet."</p>
                 })}
@@ -222,6 +224,7 @@ pub fn Unlock() -> impl IntoView {
     let c = ctx();
     let busy = RwSignal::new(false);
     let unlock_name = c.platform.get_untracked().unlock_name();
+    let confirmed = if c.show_google.get_untracked() { "Google confirmed it's you." } else { "Your email is confirmed." };
     let go = move || {
         busy.set(true);
         spawn_local(async move {
@@ -244,10 +247,14 @@ pub fn Unlock() -> impl IntoView {
             <div class="screen-head center">
                 <span class="glyph lg"><Icon i=Ic::Passkey size=28 /></span>
                 <h1 class="title" tabindex="-1">"Welcome back"</h1>
-                <p class="sub">"Google confirmed it's you. Use " {unlock_name} " to open your wallet."</p>
+                <p class="sub">{confirmed} " Use " {unlock_name} " to open your wallet."</p>
             </div>
             <div class="actions-col">
                 <Btn label=c.platform.get_untracked().create_label().replace("Create passkey", "Use passkey") busy_label="Waiting for your passkey…" busy=busy test="unlock" on_click=go />
+                <button class="btn quiet" type="button" data-test="use-recovery-code" disabled=move || busy.get()
+                    on:click=move |_| c.go(Screen::RecoverCode)>
+                    "Lost your passkey? Use your recovery code"
+                </button>
             </div>
         </Sheet>
     }
@@ -258,33 +265,54 @@ pub fn SecureWallet() -> impl IntoView {
     let c = ctx();
     let p = c.platform.get_untracked();
     let busy = RwSignal::new(false);
+    let err = RwSignal::new(None::<String>);
     let create = move || {
+        err.set(None);
         busy.set(true);
         spawn_local(async move {
             let r = backend().create_passkey().await;
             busy.set(false);
             match r {
+                Ok(_) if c.recovering.get_untracked() => {
+                    // Same wallet, new passkey: the code the user just typed still works.
+                    c.recovering.set(false);
+                    c.recovery_reminder.set(false);
+                    finish_sign_in(c);
+                }
                 Ok(code) => {
                     c.recovery_code.set(Some(code));
                     c.go(Screen::Recovery);
                 }
                 Err(e) => {
-                    c.fail(e);
+                    if let Some(m) = c.fail(e) {
+                        err.set(Some(m));
+                    }
                 }
             }
         });
     };
+    let recovering = c.recovering.get_untracked();
     view! {
         <Sheet back=true>
             <div class="screen-head center">
                 <span class="glyph lg accent"><Icon i=Ic::Passkey size=28 /></span>
-                <h1 class="title" tabindex="-1">"Secure your wallet"</h1>
-                <p class="sub">"Create a passkey so only " {p.unlock_name()} " can open your wallet. Lowki never sees it."</p>
+                {if recovering {
+                    view! {
+                        <h1 class="title" tabindex="-1">"Your wallet is back"</h1>
+                        <p class="sub">"Create a new passkey so " {p.unlock_name()} " can open it from now on. Lowki never sees it."</p>
+                    }.into_any()
+                } else {
+                    view! {
+                        <h1 class="title" tabindex="-1">"Secure your wallet"</h1>
+                        <p class="sub">"Create a passkey so only " {p.unlock_name()} " can open your wallet. Lowki never sees it."</p>
+                    }.into_any()
+                }}
             </div>
             <ul class="facts">
                 <li><Icon i=Ic::Check /><span>{p.passkey_fact()}</span></li>
-                <li><Icon i=Ic::Check /><span>"Google alone can't open it. Losing a device doesn't lose your funds."</span></li>
+                <li><Icon i=Ic::Check /><span>{if c.show_google.get_untracked() { "Google" } else { "Your email" }} " alone can't open it. Losing a device doesn't lose your funds."</span></li>
             </ul>
+            <p class="error-text" role="alert">{move || err.get()}</p>
             <div class="actions-col">
                 <Btn label=p.create_label() busy_label=format!("Waiting for {}…", p.unlock_name()) busy=busy test="create-passkey" on_click=create />
             </div>
@@ -315,7 +343,9 @@ pub fn Recovery() -> impl IntoView {
                     c.say(format!("Saved to {}", backup_name(target)));
                 }
                 Err(e) => {
-                    c.fail(e);
+                    if let Some(m) = c.fail(e) {
+                        c.say(m);
+                    }
                 }
             }
         });
@@ -333,7 +363,7 @@ pub fn Recovery() -> impl IntoView {
         <Sheet>
             <div class="screen-head">
                 <h1 class="title" tabindex="-1">"Save your recovery code"</h1>
-                <p class="sub">"If you lose your passkey, this code plus your Google account brings your wallet back. We'll show it only once."</p>
+                <p class="sub">"If you lose your passkey, this code plus your " {c.social_name()} " brings your wallet back. We'll show it only once."</p>
             </div>
             <div class="code-card" role="group" aria-label="Recovery code">
                 <ol class="code-grid" data-test="recovery-code">
@@ -352,13 +382,62 @@ pub fn Recovery() -> impl IntoView {
                     </button>
                 </div>
             </div>
-            <p class="fine left">"Keep this recovery code somewhere safe. It's the only way back in without this device. Anyone with it and your Google account can open your wallet."</p>
+            <p class="fine left">"Keep this recovery code somewhere safe. It's the only way back in without this device. Anyone with it and your " {c.social_name()} " can open your wallet."</p>
             <div class="actions-col">
                 <Btn label="I've saved it".to_string() busy=finishing test="recovery-done" on_click=move || finish(true) />
                 <button class="btn quiet" type="button" data-test="recovery-skip" disabled=move || finishing.get() on:click=move |_| finish(false)>
                     "Remind me later"
                 </button>
             </div>
+        </Sheet>
+    }
+}
+
+/// Lost passkey: email sign-in + recovery code rebuild the wallet, then a new passkey.
+#[component]
+pub fn RecoverCode() -> impl IntoView {
+    let c = ctx();
+    let code = RwSignal::new(String::new());
+    let busy = RwSignal::new(false);
+    let err = RwSignal::new(None::<String>);
+    let submit = move || {
+        let v = code.get_untracked();
+        if v.chars().filter(|c| c.is_ascii_alphanumeric()).count() < 16 {
+            err.set(Some("Enter the whole recovery code.".into()));
+            return;
+        }
+        err.set(None);
+        busy.set(true);
+        spawn_local(async move {
+            let r = backend().recover_with_code(&v).await;
+            busy.set(false);
+            match r {
+                Ok(()) => {
+                    code.set(String::new());
+                    c.recovering.set(true);
+                    c.go(Screen::SecureWallet);
+                }
+                Err(e) => err.set(c.fail(e)),
+            }
+        });
+    };
+    let submit2 = submit;
+    view! {
+        <Sheet back=true>
+            <div class="screen-head">
+                <span class="glyph"><Icon i=Ic::Keyhole size=24 /></span>
+                <h1 class="title" tabindex="-1">"Enter your recovery code"</h1>
+                <p class="sub">"With your " {c.social_name()} " confirmed, the code you saved when you set up the wallet brings it back. Then you'll create a new passkey."</p>
+            </div>
+            <form class="stack" on:submit=move |ev| { ev.prevent_default(); submit(); }>
+                <label class="label" for="rcode">"Recovery code"</label>
+                <textarea id="rcode" class="input mono" rows="3" autocomplete="off" spellcheck="false" autocapitalize="characters"
+                    placeholder="K7QM-9XHD-…" data-test="recovery-input"
+                    aria-invalid=move || err.get().is_some().to_string() aria-describedby="rcode-err"
+                    prop:value=move || code.get() on:input=move |ev| code.set(event_target_value(&ev))></textarea>
+                <p id="rcode-err" class="error-text" role="alert">{move || err.get()}</p>
+                <Btn label="Recover wallet".to_string() busy_label="Checking…" busy=busy test="recover" on_click=move || submit2() />
+            </form>
         </Sheet>
     }
 }

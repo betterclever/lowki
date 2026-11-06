@@ -17,6 +17,8 @@ pub enum Screen {
     Unlock,
     SecureWallet,
     Recovery,
+    /// Lost passkey: enter the recovery code (after an email sign-in).
+    RecoverCode,
     Home,
     Send,
     Vault(VaultDirection),
@@ -55,6 +57,10 @@ pub struct Ctx {
     pub refresh: RwSignal<u32>,
     /// Recovery code not yet saved: show the reminder on Home.
     pub recovery_reminder: RwSignal<bool>,
+    /// Rebuilt from the recovery code: the next passkey re-wraps the same wallet.
+    pub recovering: RwSignal<bool>,
+    /// Show "Continue with Google" (off unless the backend has it, or `google=1`).
+    pub show_google: RwSignal<bool>,
 }
 
 impl Ctx {
@@ -72,6 +78,8 @@ impl Ctx {
             sign_in_request: RwSignal::new(None),
             refresh: RwSignal::new(0),
             recovery_reminder: RwSignal::new(false),
+            recovering: RwSignal::new(false),
+            show_google: RwSignal::new(true),
         }
     }
 
@@ -133,6 +141,7 @@ impl Ctx {
     /// Route a backend error to its full-screen state. Returns the inline
     /// message for errors that belong next to a field instead.
     pub fn fail(&self, e: WalletError) -> Option<String> {
+
         match e {
             WalletError::PasskeyCancelled => self.go(Screen::Error(ErrorKind::PasskeyCancelled)),
             WalletError::PrfUnsupported => self.go(Screen::Error(ErrorKind::PrfUnsupported)),
@@ -143,6 +152,11 @@ impl Ctx {
             other => return Some(other.message()),
         }
         None
+    }
+
+    /// What, besides the recovery code, brings the wallet back ("Google account" or "email").
+    pub fn social_name(&self) -> &'static str {
+        if self.show_google.get_untracked() { "Google account" } else { "email" }
     }
 
     /// Publish the session to the app after sign-in.
