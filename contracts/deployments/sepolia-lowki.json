@@ -1,0 +1,14 @@
+{
+  "Admin": "0x12333c99fe454F547772dc6D04D21Afef2b9A559",
+  "BatchGatewayProvider": "0xE4e7245716d12D0F6AeA01DFe0E635C43D7D083c",
+  "LowkiOwnerAccount": "0x8Ed05C155ABB6aef00481Ca6aEc2Fc4815089228",
+  "LowkiRegistrar": "0xB5CbecBd2a52C76cdceb65DdCc3bf8f4d924c03e",
+  "LowkiRegistry": "0xEEF136dcce9AE2130028990f28eD260f11A1BDB3",
+  "Operator": "0x12333c99fe454F547772dc6D04D21Afef2b9A559",
+  "ParentRecords": "0xCe8B913eAc4B634BbC0A3390203D16ca5c2664DA",
+  "Scheme1Verifier": "0x0D53f61Ac69909faEB373355dF829c455dA73Ea1",
+  "StealthResolver": "0xb78F3D4F40Eb9b28139cc116A94d79F976da1Dc6",
+  "chainId": 11155111,
+  "gatewayUrl": "https://industry-hobbies-travels-exciting.trycloudflare.com/v1/ens/gateway",
+  "parentName": "lowki.eth"
+}
