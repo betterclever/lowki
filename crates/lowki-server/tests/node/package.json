@@ -1,0 +1,9 @@
+{
+  "name": "lowki-server-jose-check",
+  "private": true,
+  "type": "module",
+  "description": "Verifies a Lowki access token with jose, the way an app backend would.",
+  "dependencies": {
+    "jose": "6.1.0"
+  }
+}
