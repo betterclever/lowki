@@ -40,14 +40,31 @@ fn secs(ms: f64) -> String {
 
 /// The signature moment: the gourd fills with lime from the bottom as the
 /// proof moves through its stages. Reduced motion shows stepped fills.
+/// `labels` renames the three stage slots (Move in: deposit, ASP approval, sync).
 #[component]
-pub fn ProofSteps(progress: RwSignal<Option<ProofProgress>>) -> impl IntoView {
+pub fn ProofSteps(
+    progress: RwSignal<Option<ProofProgress>>,
+    #[prop(optional)] labels: Option<[&'static str; 3]>,
+    #[prop(optional)] fine: Option<&'static str>,
+) -> impl IntoView {
     let idx = |s: ProofStage| ProofStage::all().iter().position(|x| *x == s).unwrap_or(0);
+    let label = move |s: ProofStage| labels.map_or_else(|| stage_text(s), |l| l[idx(s)]);
     let reduced = reduced_motion();
     // Per-stage start/end timestamps, for the times column.
     let starts = RwSignal::new([None::<f64>; 3]);
     let ends = RwSignal::new([None::<f64>; 3]);
     let now = RwSignal::new(0.0f64);
+    // Tick the running stage's clock while it works (real stages can take seconds).
+    if let Ok(ticker) = set_interval_with_handle(
+        move || {
+            if progress.try_get_untracked().flatten().is_some() {
+                let _ = now.try_set(js_sys::Date::now());
+            }
+        },
+        std::time::Duration::from_millis(100),
+    ) {
+        on_cleanup(move || ticker.clear());
+    }
     Effect::new(move |_| {
         let Some(p) = progress.get() else { return };
         let t = js_sys::Date::now();
@@ -112,21 +129,23 @@ pub fn ProofSteps(progress: RwSignal<Option<ProofProgress>>) -> impl IntoView {
                                 "active" => view! { <Spinner /> }.into_any(),
                                 _ => view! { <span class="step-dot"></span> }.into_any(),
                             }}</span>
-                            <span class="step-title">{stage_text(s)}</span>
+                            <span class="step-title">{label(s)}</span>
                             <span class="t">{time}</span>
                         </li>
                     }
                 }).collect_view()}
             </ol>
-            <p class="sr-only" aria-live="polite">{move || progress.get().map(|p| stage_text(p.stage))}</p>
+            <p class="sr-only" aria-live="polite">{move || progress.get().map(|p| label(p.stage))}</p>
         </div>
-        <p class="fine">"Your proof is made on this device. Nobody learns which deposit was yours."</p>
+        <p class="fine">{fine.unwrap_or("Your proof is made on this device. Nobody learns which deposit was yours.")}</p>
     }
 }
 
 #[component]
 fn DoneView(title: String, amount: Amount, detail: String, receipt: SendReceipt) -> impl IntoView {
     let c = ctx();
+    // What really happened (stage times, proof backend and time, fee), when the backend knows.
+    let report = if receipt.private { backend().private_report() } else { vec![] };
     view! {
         <div class="screen-head center done" data-test="send-done">
             {if receipt.private {
@@ -141,6 +160,13 @@ fn DoneView(title: String, amount: Amount, detail: String, receipt: SendReceipt)
         <dl class="kvs">
             <Kv k="Transaction"><Address addr=receipt.hash.clone() what="transaction hash" /></Kv>
         </dl>
+        {(!report.is_empty()).then(|| view! {
+            <dl class="kvs" data-test="private-report">
+                {report.into_iter().map(|(k, v)| view! {
+                    <div class="kv"><dt>{k}</dt><dd class="mono">{v}</dd></div>
+                }).collect_view()}
+            </dl>
+        })}
         <div class="actions-col">
             <Btn label="Done".to_string() test="done" on_click=move || c.done() />
         </div>
@@ -152,7 +178,8 @@ pub fn Send() -> impl IntoView {
     let c = ctx();
     let to = RwSignal::new(String::new());
     let amount = RwSignal::new(String::new());
-    let token = RwSignal::new(Token::Usdc);
+    let private_token = backend().private_token();
+    let token = RwSignal::new(private_token);
     let private = RwSignal::new(true);
     let err = RwSignal::new(None::<String>);
     let phase = RwSignal::new(Phase::Form);
@@ -229,14 +256,17 @@ pub fn Send() -> impl IntoView {
                             <div class="toggle-text">
                                 <span class="toggle-title" id="priv-l"><Icon i=Ic::Keyhole size=18 />"Send privately"</span>
                                 <span class="toggle-sub" id="priv-d">{move || if private.get() {
-                                    "Pays from your private balance. Nobody can link it to this account. Takes about a second."
+                                    "Pays from your private balance with a proof made on this device. Nobody can link it to this account."
                                 } else {
                                     "Pays from this account. The recipient and anyone on chain will see this address."
                                 }}</span>
                             </div>
                             <button type="button" role="switch" class="switch" data-test="private-toggle"
                                 aria-checked=move || private.get().to_string() aria-labelledby="priv-l" aria-describedby="priv-d"
-                                on:click=move |_| private.update(|p| *p = !*p)>
+                                on:click=move |_| {
+                                    private.update(|p| *p = !*p);
+                                    if private.get_untracked() { token.set(private_token); }
+                                }>
                                 <span class="switch-knob"></span>
                             </button>
                         </div>
@@ -291,12 +321,11 @@ pub fn VaultMoveScreen(direction: VaultDirection) -> impl IntoView {
         async move { backend().balances(&app).await.ok() }
     });
     let inbound = direction == VaultDirection::In;
-    let available = move || {
-        balances.get().flatten().map(|b| if inbound { b.public_of(Token::Usdc) } else { b.private_of(Token::Usdc) })
-    };
+    let tok = backend().private_token();
+    let available = move || balances.get().flatten().map(|b| if inbound { b.public_of(tok) } else { b.private_of(tok) });
     let app_name = c.app.get_untracked().name;
     let submit = move || {
-        let Some(amt) = Amount::parse(Token::Usdc, &amount.get_untracked()).filter(|a| a.units > 0) else {
+        let Some(amt) = Amount::parse(tok, &amount.get_untracked()).filter(|a| a.units > 0) else {
             err.set(Some("Enter an amount, like 25 or 12.50.".into()));
             return;
         };
@@ -323,9 +352,9 @@ pub fn VaultMoveScreen(direction: VaultDirection) -> impl IntoView {
     };
     let title = if inbound { "Move to private balance" } else { "Move out of private balance" };
     let explain = if inbound {
-        format!("Moves USDC from your {app_name} account into your private balance. The deposit is visible on chain; what you do with it afterwards isn't.")
+        format!("Moves {} from your {app_name} account into your private balance. The deposit is visible on chain; what you do with it afterwards isn't.", tok.symbol())
     } else {
-        format!("Moves USDC back to your {app_name} account. A proof on this device hides which deposit it came from.")
+        format!("Moves {} back to your {app_name} account. A proof on this device hides which deposit it came from.", tok.symbol())
     };
     view! {
         <Sheet back=true>
@@ -345,7 +374,7 @@ pub fn VaultMoveScreen(direction: VaultDirection) -> impl IntoView {
                             <div class="amount-row">
                                 <input id="vamount" class="input amount" type="text" inputmode="decimal" placeholder="0.00"
                                     data-test="vault-amount" prop:value=move || amount.get() on:input=move |ev| amount.set(event_target_value(&ev)) />
-                                <span class="unit-tag">"USDC"</span>
+                                <span class="unit-tag">{tok.symbol()}</span>
                             </div>
                             <button class="link sm" type="button" on:click=move |_| if let Some(a) = available() { amount.set(a.fmt_plain().replace(',', "")) }>"Use max"</button>
                         </div>
@@ -360,7 +389,12 @@ pub fn VaultMoveScreen(direction: VaultDirection) -> impl IntoView {
                     <div class="screen-head">
                         <h1 class="title" tabindex="-1">{if inbound { "Moving in…" } else { "Moving out privately" }}</h1>
                                             </div>
-                    <ProofSteps progress=progress />
+                    {if inbound {
+                        view! { <ProofSteps progress=progress labels=["Depositing", "ASP approval", "Syncing pool"]
+                            fine="The deposit comes from this account. Once the pool's ASP approves it, it's yours to send privately." /> }.into_any()
+                    } else {
+                        view! { <ProofSteps progress=progress /> }.into_any()
+                    }}
                 }.into_any(),
                 Phase::Done(r, amt, _) => view! {
                     <DoneView title=if inbound { "Now private".to_string() } else { "Moved out".to_string() } amount=amt

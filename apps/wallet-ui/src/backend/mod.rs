@@ -79,6 +79,20 @@ pub trait WalletBackend {
     fn app_accounts(&self) -> BoxFut<'_, Res<Vec<AppAccount>>>;
     /// Token registry lookup, used to format amounts in typed data.
     fn token_at(&self, address: &str) -> Option<Token>;
+    /// How chain reads and broadcasts travel. `None` when there is no chain (the mock).
+    /// Resolves once the connection is decided (the anon network may take seconds to boot).
+    fn chain_connection(&self) -> BoxFut<'_, Option<ChainConnection>> {
+        Box::pin(async { None })
+    }
+    /// The token the private balance holds (the real pool is ETH).
+    fn private_token(&self) -> Token {
+        Token::Usdc
+    }
+    /// Label/value facts about the last private operation (stages, proof backend and time,
+    /// relayer fee), for the done screen. Empty when there is nothing real to report.
+    fn private_report(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
 }
 
 pub trait Backend: AuthBackend + WalletBackend {}

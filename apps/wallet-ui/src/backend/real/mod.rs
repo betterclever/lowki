@@ -2,8 +2,9 @@
 //! passkeys, the wrapped blob, the server share, app tokens) and a chain provider
 //! (balances and broadcasting).
 //!
-//! Private send and delegation are not wired to real services yet; those calls go to the
-//! mock behind the same traits.
+//! Private balance, Move in/out and Send privately are real (Privacy Pools v1 through
+//! `private.rs`); delegation is not wired to real services yet and goes to the mock behind the
+//! same traits. Chain reads and broadcasts go through Anon-RPC by default (`chain.rs`).
 //!
 //! Flows (see `docs/ARCHITECTURE.md`, "Sign-in and recovery"):
 //! - **Sign-up:** email code -> passkey (PRF) -> worker `createWallet` -> PUT blob -> PUT
@@ -17,6 +18,7 @@ pub mod chain;
 pub mod codec;
 mod js;
 pub mod passkey;
+pub mod private;
 mod server;
 mod worker;
 
@@ -27,7 +29,7 @@ use std::rc::Rc;
 use serde_json::{Value, json};
 use wasm_bindgen::JsValue;
 
-use self::chain::{ChainProvider, JsonRpc};
+use self::chain::{ChainProvider, RoutedRpc};
 use self::js::{bytes, get_bytes, get_str, obj, parse_json, wipe};
 use self::passkey::{Ceremony, PasskeyError};
 use self::server::{Server, ServerError};
@@ -53,9 +55,13 @@ struct State {
 
 pub struct RealBackend {
     server: Server,
-    worker: Option<WorkerClient>,
+    worker: Option<Rc<WorkerClient>>,
     chain: Box<dyn ChainProvider>,
-    /// Private send and delegation (not real yet).
+    /// Privacy Pools (Kohaku + worker prover, through the glue).
+    private: private::PrivatePool,
+    /// Facts about the last private operation, for the done screen.
+    report: RefCell<Vec<(String, String)>>,
+    /// Delegation (not real yet).
     mock: Rc<MockBackend>,
     st: RefCell<State>,
 }
@@ -126,13 +132,21 @@ fn s(v: &Value, k: &str) -> Option<String> {
 impl RealBackend {
     pub fn new(mock: Rc<MockBackend>) -> Self {
         let worker = match WorkerClient::spawn() {
-            Ok(w) => Some(w),
+            Ok(w) => Some(Rc::new(w)),
             Err(e) => {
                 log(&format!("could not start the key worker: {e}"));
                 None
             }
         };
-        Self { server: Server::default(), worker, chain: Box::new(JsonRpc::default_sepolia()), mock, st: RefCell::default() }
+        Self {
+            server: Server::default(),
+            worker,
+            chain: Box::new(RoutedRpc::new()),
+            private: private::PrivatePool::default(),
+            report: RefCell::default(),
+            mock,
+            st: RefCell::default(),
+        }
     }
 
     async fn w(&self, req: JsValue) -> Res<JsValue> {
@@ -159,6 +173,53 @@ impl RealBackend {
             let _ = w.call(obj(&[("type", "lock".into())])).await;
         }
         self.st.borrow_mut().unlocked = false;
+        // The next unlock may be another seed: its notes are not this session's.
+        self.private.reset();
+    }
+
+    fn worker_rc(&self) -> Res<Rc<WorkerClient>> {
+        self.worker.clone().ok_or_else(|| WalletError::Other("The key worker didn't start.".into()))
+    }
+
+    /// Polls the receipt of `hash` (1 s steps, up to 3 min) over the routed provider.
+    async fn wait_receipt(&self, hash: &str) -> Res<Value> {
+        for _ in 0..180 {
+            if let Some(r) = self.chain.receipt(hash).await.map_err(chain_err)? {
+                if r.get("status").and_then(Value::as_str) != Some("0x1") {
+                    return Err(WalletError::Other(format!("The transaction {} failed on chain.", &hash[..10.min(hash.len())])));
+                }
+                return Ok(r);
+            }
+            gloo_timers::future::TimeoutFuture::new(1_000).await;
+        }
+        Err(WalletError::Network)
+    }
+
+    /// Private withdraw (relayer) from the pool to `to`, with the stages reported.
+    async fn private_withdraw(&self, to: &str, wei: u128, progress: ProgressFn) -> Res<SendReceipt> {
+        let w = self.worker_rc()?;
+        let u = self.private.unshield(&w, wei, to, progress).await.map_err(private_err)?;
+        let mut rep = vec![
+            ("Syncing pool".to_string(), secs(u.timings.sync_ms)),
+            ("Building proof".to_string(), secs(u.timings.prove_ms)),
+            ("Submitting".to_string(), secs(u.timings.submit_ms)),
+        ];
+        if let Some(p) = &u.proof {
+            let backend = if p.backend == "webgpu" { "WebGPU" } else { "CPU" };
+            rep.insert(0, ("Proof".to_string(), format!("{} ms on {backend}, in this browser", p.ms.round())));
+        }
+        rep.push(("Recipient gets".to_string(), Amount::new(Token::Eth, u.net.parse().unwrap_or(0)).fmt()));
+        rep.push((format!("Relayer fee ({} bps)", u.relay_fee_bps), Amount::new(Token::Eth, u.fee.parse().unwrap_or(0)).fmt()));
+        rep.push(("Nullifier".to_string(), short(&u.nullifier_hash)));
+        rep.push(("Connection".to_string(), connection_line()));
+        web_sys::console::info_1(&JsValue::from_str(&format!(
+            "[lowki] private send: {wei} wei -> {to} tx {} nullifierHash={} proof={:?}",
+            u.tx_hash,
+            u.nullifier_hash,
+            u.proof.as_ref().map(|p| (&p.backend, p.ms))
+        )));
+        *self.report.borrow_mut() = rep;
+        Ok(SendReceipt { hash: u.tx_hash, private: true })
     }
 
     /// Passkey assertion through lowki-server. PRF is required: a real `get()` that returns
@@ -475,6 +536,7 @@ impl AuthBackend for RealBackend {
             self.server.set_csrf(None);
             self.lock_worker().await;
             *self.st.borrow_mut() = State::default();
+            self.report.borrow_mut().clear();
             Ok(())
         })
     }
@@ -493,8 +555,18 @@ impl WalletBackend for RealBackend {
                 .ok()
                 .and_then(|h| codec::parse_qty(&h))
                 .unwrap_or(0);
-            // The private balance is still the mock's (private send is another track).
-            let private = self.mock.balances(&app).await.map(|b| b.private).unwrap_or_default();
+            // The private balance is the user's approved ETH in the pool (Kohaku sync). A pool
+            // that can't be read shows as empty rather than failing Home.
+            let private = match self.worker_rc() {
+                Ok(w) => match self.private.balance(&w).await {
+                    Ok(b) => vec![Amount::new(Token::Eth, b.approved.parse().unwrap_or(0))],
+                    Err(e) => {
+                        log(&format!("private balance: {e}"));
+                        vec![]
+                    }
+                },
+                Err(_) => vec![],
+            };
             Ok(Balances {
                 public: vec![Amount::new(Token::Usdc, usdc), Amount::new(Token::Eth, eth)],
                 private,
@@ -512,11 +584,14 @@ impl WalletBackend for RealBackend {
     fn send(&self, app: &AppInfo, req: SendRequest, progress: ProgressFn) -> BoxFut<'_, Res<SendReceipt>> {
         let app = app.clone();
         Box::pin(async move {
-            if req.private {
-                return self.mock.send(&app, req, progress).await;
-            }
             if !codec::is_address(&req.to) {
                 return Err(WalletError::InvalidAddress);
+            }
+            if req.private {
+                if req.amount.token != Token::Eth {
+                    return Err(WalletError::Other("The private balance holds ETH. Switch the token to ETH.".into()));
+                }
+                return self.private_withdraw(&req.to, req.amount.units, progress).await;
             }
             let hash = match req.amount.token {
                 Token::Usdc => self.transact(&app, chain::USDC, 0, &chain::transfer_data(&req.to, req.amount.units)).await?,
@@ -527,7 +602,53 @@ impl WalletBackend for RealBackend {
     }
 
     fn move_private(&self, app: &AppInfo, req: VaultMove, progress: ProgressFn) -> BoxFut<'_, Res<SendReceipt>> {
-        self.mock.move_private(app, req, progress)
+        let app = app.clone();
+        Box::pin(async move {
+            if req.amount.token != Token::Eth {
+                return Err(WalletError::Other("The private balance holds ETH.".into()));
+            }
+            let wei = req.amount.units;
+            if req.direction == VaultDirection::Out {
+                // Withdraw to this app account through the relayer: a fresh proof, so the
+                // account can't be linked to the deposit it came from.
+                let to = self.address(&app).await?;
+                return self.private_withdraw(&to, wei, progress).await;
+            }
+            // Move in: Kohaku deposit (== worker ppShield) signed by the worker from the app
+            // account and broadcast over the routed provider; then the ASP; then a sync.
+            let w = self.worker_rc()?;
+            let t0 = js_sys::Date::now();
+            progress(ProofProgress { stage: ProofStage::SyncingPool, fraction: 0.05 });
+            let tx = self.private.prepare_shield(&w, wei).await.map_err(private_err)?;
+            progress(ProofProgress { stage: ProofStage::SyncingPool, fraction: 0.4 });
+            let value: u128 = tx.value.parse().unwrap_or(wei);
+            let hash = self.transact(&app, &tx.to, value, &tx.data).await?;
+            self.wait_receipt(&hash).await?;
+            let t1 = js_sys::Date::now();
+            progress(ProofProgress { stage: ProofStage::SyncingPool, fraction: 1.0 });
+            let p2 = progress.clone();
+            let on_poll: Rc<dyn Fn(f32)> = Rc::new(move |f| p2(ProofProgress { stage: ProofStage::BuildingProof, fraction: f }));
+            on_poll(0.0);
+            let ok = self.private.wait_approved(&w, &tx.precommitment, on_poll).await.map_err(private_err)?;
+            let t2 = js_sys::Date::now();
+            progress(ProofProgress { stage: ProofStage::Submitting, fraction: 0.2 });
+            let bal = self.private.balance(&w).await.map_err(private_err)?;
+            progress(ProofProgress { stage: ProofStage::Submitting, fraction: 1.0 });
+            *self.report.borrow_mut() = vec![
+                ("Deposit".to_string(), format!("#{} · {}", tx.deposit_index, secs(t1 - t0))),
+                ("ASP approval".to_string(), secs(ok.ms)),
+                ("Syncing pool".to_string(), secs(js_sys::Date::now() - t2)),
+                ("In the pool".to_string(), Amount::new(Token::Eth, ok.balance.parse().unwrap_or(0)).fmt()),
+                ("Private balance".to_string(), Amount::new(Token::Eth, bal.approved.parse().unwrap_or(0)).fmt()),
+                ("Connection".to_string(), connection_line()),
+            ];
+            let pending: u128 = bal.pending.parse().unwrap_or(0);
+            if pending > 0 {
+                self.report.borrow_mut().insert(5, ("Awaiting the ASP".to_string(), Amount::new(Token::Eth, pending).fmt()));
+            }
+            log(&format!("move in: deposit {hash} label {} approved in {} ms", ok.label, ok.ms));
+            Ok(SendReceipt { hash, private: true })
+        })
     }
 
     fn sign_message(&self, app: &AppInfo, message: &str) -> BoxFut<'_, Res<String>> {
@@ -622,9 +743,77 @@ impl WalletBackend for RealBackend {
     fn token_at(&self, address: &str) -> Option<Token> {
         address.eq_ignore_ascii_case(chain::USDC).then_some(Token::Usdc)
     }
+
+    fn chain_connection(&self) -> BoxFut<'_, Option<ChainConnection>> {
+        Box::pin(async move {
+            // Decides the route (boots the anon network) if nothing has yet.
+            let _ = self.chain.fees().await;
+            let s = chain::connection_status();
+            Some(if s.anonymous {
+                let net = s.anon_network.as_deref().map(net_name).unwrap_or("the anon network");
+                let exit = s.egress_ip.as_deref().map(|ip| format!(", exit {ip}")).unwrap_or_default();
+                ChainConnection {
+                    private: true,
+                    title: "Private connection".into(),
+                    detail: format!("Reads go through {net}{exit}. {} can't see your IP.", s.rpc_host.unwrap_or_else(|| "The RPC".into())),
+                }
+            } else {
+                ChainConnection {
+                    private: false,
+                    title: "Direct connection".into(),
+                    detail: s.reason.unwrap_or_else(|| "The RPC sees your IP.".into()),
+                }
+            })
+        })
+    }
+
+    fn private_token(&self) -> Token {
+        Token::Eth
+    }
+
+    fn private_report(&self) -> Vec<(String, String)> {
+        self.report.borrow().clone()
+    }
 }
 
-/// Builds the real backend. The mock carries private send and delegation for now.
+fn net_name(n: &str) -> &'static str {
+    match n {
+        "nox" => "Nox",
+        "nym" => "Nym",
+        "tor-js" => "Tor",
+        _ => "the anon network",
+    }
+}
+
+fn connection_line() -> String {
+    let s = chain::connection_status();
+    if s.anonymous {
+        format!("Anon-RPC ({})", s.anon_network.as_deref().map(net_name).unwrap_or("?"))
+    } else {
+        format!("Direct: {}", s.reason.unwrap_or_default())
+    }
+}
+
+fn secs(ms: f64) -> String {
+    format!("{:.1} s", (ms / 1000.0).max(0.0))
+}
+
+fn short(h: &str) -> String {
+    if h.len() > 14 { format!("{}…{}", &h[..8], &h[h.len() - 6..]) } else { h.to_string() }
+}
+
+fn private_err(e: String) -> WalletError {
+    log(&format!("private: {e}"));
+    if e.contains("insufficient") {
+        WalletError::InsufficientFunds
+    } else if e.contains("Failed to fetch") || e.contains("timed out") || e.contains("http 5") {
+        WalletError::Network
+    } else {
+        WalletError::Other(format!("Private transfer failed: {e}"))
+    }
+}
+
+/// Builds the real backend. The mock carries delegation for now.
 pub fn new_shared(mock: Rc<MockBackend>) -> Rc<RealBackend> {
     Rc::new(RealBackend::new(mock))
 }
