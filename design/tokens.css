@@ -26,6 +26,9 @@
   /* Private (shielded) state: always reads as "sealed" */
   --lk-private-bg: #0F1B0D;
   --lk-private-fg: #B5F23D;
+  --lk-private-text: #E8EFDD;  /* body text on the private surface (both themes) */
+  --lk-private-muted: #9AA88E;
+  --lk-private-line: #2E3F25;
 
   /* Semantic (separate from the brand accent) */
   --lk-danger: #C8402F;
