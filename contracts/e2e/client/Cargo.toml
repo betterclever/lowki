@@ -1,0 +1,17 @@
+[package]
+name = "lowki-ens-e2e"
+version = "0.1.0"
+edition = "2024"
+description = "Test-only CLI for contracts/e2e: every key, calldata, signature, record parse, derivation and scan in the e2e is done here, in Rust, with lowki-ens + lowki-stealth"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Standalone, like the crates/ (no root workspace).
+[workspace]
+
+[dependencies]
+lowki-ens = { path = "../../../crates/lowki-ens" }
+lowki-stealth = { path = "../../../crates/lowki-stealth" }
+serde_json = "1"
+ureq = { version = "2", default-features = false, features = ["json"] }
+zeroize = "1.8"

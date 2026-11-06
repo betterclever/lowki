@@ -1,0 +1,14 @@
+{
+  "name": "lowki-ens-e2e",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end run of Lowki ENSv2 stealth names on an anvil fork of Sepolia. Test harness only: keys, calldata and signatures come from Rust (lowki-ens, lowki-stealth); viem only sends transactions and plays an unmodified wallet.",
+  "scripts": {
+    "e2e": "tsx e2e.ts"
+  },
+  "dependencies": {
+    "@scopelift/stealth-address-sdk": "1.0.0-beta.5",
+    "tsx": "4.23.15",
+    "viem": "2.57.16"
+  }
+}
