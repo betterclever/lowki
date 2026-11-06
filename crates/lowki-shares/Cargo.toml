@@ -1,0 +1,18 @@
+[package]
+name = "lowki-shares"
+version = "0.1.0"
+edition = "2024"
+description = "Shamir secret sharing over GF(2^8), byte-compatible with Privy's shamir-secret-sharing 0.0.4, with a threshold-checking combine"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace]
+
+[dependencies]
+rand_core = { version = "0.6.4", default-features = false }
+zeroize = { version = "1.8", features = ["derive"] }
+
+[dev-dependencies]
+hex = "0.4.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
