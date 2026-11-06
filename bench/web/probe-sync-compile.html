@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><title>sync compile probe</title>
+<script type="module">
+// Probe: can the main thread / a worker synchronously compile + instantiate the circuit wasm?
+const out = {};
+const bytes = async (n) => new Uint8Array(await (await fetch(`/artifacts/${n}.wasm`).then(r => r.arrayBuffer())));
+const imports = { runtime: { exceptionHandler() {}, printErrorMessage() {}, writeBufferMessage() {}, showSharedRWMemory() {} } };
+for (const n of ["commitment", "withdraw"]) {
+  const b = await bytes(n);
+  try { const t = performance.now(); const m = new WebAssembly.Module(b); out[n + ".main.syncModule"] = `ok ${(performance.now() - t).toFixed(1)}ms`;
+        try { const t2 = performance.now(); new WebAssembly.Instance(m, imports); out[n + ".main.syncInstance"] = `ok ${(performance.now() - t2).toFixed(1)}ms`; } catch (e) { out[n + ".main.syncInstance"] = String(e); }
+  } catch (e) { out[n + ".main.syncModule"] = String(e); }
+  const t = performance.now(); const m = await WebAssembly.compile(b); out[n + ".main.asyncCompile"] = `ok ${(performance.now() - t).toFixed(1)}ms`;
+  try { const t2 = performance.now(); new WebAssembly.Instance(m, imports); out[n + ".main.syncInstanceOfAsyncModule"] = `ok ${(performance.now() - t2).toFixed(1)}ms`; } catch (e) { out[n + ".main.syncInstanceOfAsyncModule"] = String(e); }
+}
+const w = new Worker(URL.createObjectURL(new Blob([`onmessage = async (e) => { const r = {}; for (const [n, b] of e.data) { try { const t = performance.now(); const m = new WebAssembly.Module(b); new WebAssembly.Instance(m, { runtime: { exceptionHandler() {}, printErrorMessage() {}, writeBufferMessage() {}, showSharedRWMemory() {} } }); r[n + ".worker.sync"] = "ok " + (performance.now() - t).toFixed(1) + "ms"; } catch (err) { r[n + ".worker.sync"] = String(err); } } postMessage(r); }`], { type: "text/javascript" })));
+w.postMessage([["commitment", await bytes("commitment")], ["withdraw", await bytes("withdraw")]]);
+Object.assign(out, await new Promise((r) => (w.onmessage = (e) => r(e.data))));
+await fetch("/result", { method: "POST", body: JSON.stringify({ suite: "probe-sync-compile", ua: navigator.userAgent, results: out }) });
+</script>
