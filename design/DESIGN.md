@@ -14,22 +14,29 @@ Files in this folder:
 
 ## The mark
 
-A club-shaped lauki is a keyhole turned upside down. The mark is a lime gourd with a keyhole cut into its body, plus a leaf in the lighter lauki green. So it reads as the vegetable and as a lock in the same glance.
+**A lauki in low-key light.** In photography, a low-key image is mostly shadow with a single light. The mark is a dark bottle gourd, with a long leaning neck and a curling tendril. One lime rim of light runs along its edge, swelling at the belly and tapering to nothing at both ends like a crescent moon. Lime light also comes through a keyhole in its body.
+
+On dark surfaces the body vanishes into the background. Only the light remains, a single calligraphic stroke and a glowing keyhole, and the eye completes the gourd. That is the brand idea: you see only what you need to.
+
+The geometry is generated, not hand-drawn. A curved spine carries a smooth width profile (round bulb, logistic taper into the neck), and the rim thickness follows the same profile. Every curve is continuous.
 
 | File | Use |
 |---|---|
-| `lowki-mark.svg` | Default mark. Works on light and dark. |
-| `lowki-mark-mono.svg` | One colour (`currentColor`), for stamps, favicons in UI, and watermarks. |
-| `lowki-app-icon.svg`, `favicon.svg` | Ink tile with a lime mark. Use for app and browser icons. |
-| `lowki-wordmark-{ink,light,lime}.svg` | The wordmark: monoline, round caps, all lowercase, and the dot of the i is a tiny gourd. |
-| `lowki-lockup.svg`, `lowki-lockup-dark.svg` | The mark and wordmark together, for headers and the sign-in sheet. |
+| `lowki-mark.svg` | Solid mark: an ink gourd with a lime rim and keyhole. For light surfaces. |
+| `lowki-mark-night.svg` | Night mark: rim, keyhole, stem and tendril only. For dark surfaces. |
+| `lowki-mark-mono.svg` | Night mark in `currentColor`, for one-colour use. |
+| `lowki-app-icon.svg` | Ink tile with the night mark. Use for app icons. |
+| `favicon.svg` | Bold version for sizes under 32 px: an ink gourd and keyhole on a lime tile. |
+| `lowki-wordmark-{ink,light,lime}.svg` | Monoline lowercase wordmark with round caps. On dark, the dot of the i is lime. |
+| `lowki-lockup.svg`, `lowki-lockup-dark.svg` | Mark and wordmark together. |
 
 **Rules for the mark**
 
-- Leave clear space equal to the width of the keyhole circle × 2 on every side.
-- The mark must be at least 16 px tall. Below 24 px, use the app icon instead.
-- Never recolour the keyhole, outline the mark, rotate it upright into a plain keyhole, add gradients or drop shadows, or set the wordmark in a font.
-- The wordmark is always lowercase.
+- Use the solid mark on light surfaces and the night mark on dark ones. Never place the solid mark on ink, because its body disappears.
+- Light always comes from the right. Never mirror the mark.
+- The minimum size is 32 px tall; below that, use `favicon.svg`.
+- Leave clear space equal to the bulb radius on every side.
+- Don't add glows, gradients or outlines, and don't recolour the rim.
 
 ## Colour
 
