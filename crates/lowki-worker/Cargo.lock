@@ -1925,6 +1925,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "lowki-ens"
+version = "0.1.0"
+dependencies = [
+ "k256",
+ "lowki-stealth",
+ "serde_json",
+ "zeroize",
+]
+
+[[package]]
 name = "lowki-gpu"
 version = "0.1.0"
 dependencies = [
@@ -2023,6 +2033,7 @@ dependencies = [
  "js-sys",
  "k256",
  "lowki-aa",
+ "lowki-ens",
  "lowki-groth16",
  "lowki-keys",
  "lowki-pp-core",

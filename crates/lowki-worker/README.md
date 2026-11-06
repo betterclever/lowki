@@ -57,6 +57,14 @@ Field types:
 | `kohakuAllowPath` | `path` | `ok` |
 | `ppSignNoteEnvelope` | `accountIndex`, `chainId`, `entrypoint`, `depositIndex`, `secretIndex` | `noteSignature {signature}` (Kohaku `EnvelopeSigner`) |
 | `sealAppKey` | `origin`, `enclavePublicKey` (32-byte X25519 hex), `grant {signerId, policyIds, expiry, nonce?}` | `sealedAppKey {suite, address, enc, ciphertext, grant, grantHash, grantSignature}` |
+| `ensIdentity` | `index = 0` | `ensIdentity {index, path, address}`: the name-owner key `m/137'/0'/{index}'` (address only) |
+| `ensSignRegistration` | `chainId`, `registrar`, `label`, `resolver?` (zero), `duration`, `nonce`, `deadline`, `index = 0` | `ensRegistration {owner, signature}`: EIP-712 `Register` for `LowkiRegistrar`; the label rules are checked first |
+| `ensSignOwnerSetup` | `chainId`, `name`, `ownerAccount`, `authNonce`, `execNonce`, `deadline`, `factory`, `permissionedResolverImpl`, `stealthResolver`, `registry`, `gatewayUrl`, `recordsResolver`, `index = 0` | `ensOwnerSetup {owner, executeSignature, authorization{chainId,address,nonce,yParity,r,s}, record, metaAddress}`: the EIP-7702 authorisation (delegate `LowkiOwnerAccount`) and the EIP-712 `Execute` over the five setup calls (`ens::owner_setup_calls`) |
+| `ensRecordsAuth` | `name`, `timestamp` | `recordsAuth {name, timestamp, signature, viewingAddress}`: `personal_sign` by the stealth **viewing** key of `records_auth_message(name, timestamp)` (lowki-server `GET /v1/ens/records`) |
+| `stealthScan` | `records: [{stealthAddress, ephemeralPubkey, viewTag}]` | `stealthScan {scanned, found: [{stealthAddress, ephemeralPubkey}]}`: view tag, then the derived address must equal the record's |
+| `stealthSignTransaction` | `ephemeralPubkey`, `stealthAddress`, `tx` (as `signTransaction`) | `signedTransaction`: signed by the stealth key of a found payment, derived here and never returned; refused if it doesn't control `stealthAddress` |
+| `appListSeal` | `data` (UTF-8, ≤ 32 KiB) | `sealedAppList {blob}` (hex) |
+| `appListOpen` | `blob` (hex) | `appList {data}`; `unwrapFailed` for another wallet's or a tampered blob |
 
 Error `code`s: `locked`, `alreadyUnlocked`, `invalidRequest`, `unwrapFailed`,
 `invalidShares`, `pathNotAllowed`, `circuitsNotLoaded`, `prover`, `signing`, `seal`, `internal`.
@@ -99,6 +107,17 @@ Error `code`s: `locked`, `alreadyUnlocked`, `invalidRequest`, `unwrapFailed`,
     in domain `{name: "Lowki Delegation", version: "1"}`, signed by the app key.
     `enclaveKey` binds the grant to the recipient.
   - **Enclave attestation is not checked here.** The caller must pass only an attested key.
+
+- **ENS name owner (`src/ens.rs`):** lowki-ens `IdentityKey` at `m/137'/0'/{i}'`, never an
+  app account or a stealth key, so the public name links to nothing else. It only signs: the
+  operator (lowki-server) pays for registration and for the owner batch, and rebuilds the batch
+  calls itself before relaying (a byte-identical copy of `ens::owner_setup_calls`).
+- **App list:** `0x01 || nonce12 || AES-256-GCM(K, json, aad "lowki/app-list/v1")` with
+  `K = HKDF-SHA256(ikm = seed, salt = "", info = "lowki/app-list/key/v1")`, domain-separated
+  from the pairwise-ID key and the KEK. The key never leaves the worker; lowki-server stores only
+  the ciphertext (`PUT /v1/me/app-list`).
+- lowki-ens is built **without** its normalizer (`default-features = false`): Lowki labels are
+  ASCII by rule, which keeps the wasm at 4.2 MB.
 
 ## Session and auto-lock
 
@@ -145,6 +164,9 @@ All commands run from `crates/lowki-worker` with
 | **Headless Chrome 156, inside a dedicated Web Worker, through the JS API:** create → lock → unlock → recover → same address and pairwise ID → personal_sign + EIP-712 → `ppLoadCircuits(useGpu)` → 2 withdraw proofs on **WebGPU** + commitment → `lowki-groth16::verify` → a CPU-only worker proves and verifies a withdraw → the auto-lock timer fires with no message | `make test-chrome` on the host (see below) | pass |
 | snarkjs 0.7.5 verifies the browser proofs (on Linux) and the native proofs | `cd vectors/lowki-worker && npx tsx verify-proofs.ts out/worker-proofs.jsonl out/native-proofs.jsonl` | 4/4 and 2/2 |
 | **Deployed Sepolia withdrawal verifier** (`0x822f…A00a`, read from the pool's `WITHDRAWAL_VERIFIER()`): `eth_call verifyProof` | `npx tsx onchain-verifier.ts out/worker-proofs.jsonl out/native-proofs.jsonl` | true for every real proof, false for tampered pA, un-swapped pB and +1 public signal |
+| ENS + stealth + app list (`tests/ens.rs`): identity = lowki-ens `IdentityKey` for 3 indices × 2 seeds; `Register` recovers to the owner; the `Execute` signature binds the rebuilt calls and the 7702 authorisation recovers to the owner; records auth recovers to the viewing key; label rules refused before signing; scan finds exactly the wallet's addresses (a forged record with our ephemeral key is rejected); stealth-signed tx; app list round trip, fresh nonces, other wallet / tampered blob refused, lock | `cargo test --release --test ens` | pass |
+| **Differential vs viem 2.54.1** for the above (`vectors/lowki-worker/ens-check.ts` on `out/ens-worker.json`): identity addresses (`mnemonicToAccount` at `m/137'/0'/i'`), `verifyTypedData` for `Register` and `Execute(Call[])`, `recoverAuthorizationAddress`, `recoverMessageAddress` (records auth), `recoverTransactionAddress` (stealth tx) | `cargo test --release --test ens && (cd ../../vectors/lowki-worker && npx tsx ens-check.ts)` | 32/32 |
+| Live Sepolia: these requests (Node build) claim a name through lowki-server and the name resolves with plain viem | `node apps/wallet-ui/scripts/claim-live.mjs test-<x>` | `test-c8d16c.lowki.eth` (see wallet-ui README) |
 | clippy `-D warnings`: native, `--no-default-features`, wasm32, wasm32 `--no-default-features` | `make clippy` (+ wasm32 no-default) | clean |
 | wasm32 build | `make wasm-build` | 5.3 MB release (4.0 MB after wasm-bindgen) |
 

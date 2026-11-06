@@ -288,6 +288,65 @@ pub enum Request {
 
     // ---- delegation ----------------------------------------------------------------------
     SealAppKey { origin: String, enclave_public_key: String, grant: GrantIn },
+
+    // ---- ENS name + stealth payments (src/ens.rs) -------------------------------------------
+    /// The name-owner identity key `m/137'/0'/{index}'` (address only).
+    EnsIdentity { #[serde(default)] index: u32 },
+    /// EIP-712 `Register` for `LowkiRegistrar`, signed by the identity key (owner = its address).
+    EnsSignRegistration {
+        chain_id: String,
+        registrar: String,
+        label: String,
+        #[serde(default)]
+        resolver: Option<String>,
+        duration: u64,
+        nonce: String,
+        deadline: u64,
+        #[serde(default)]
+        index: u32,
+    },
+    /// The sponsored owner batch: EIP-7702 authorisation + EIP-712 `Execute` over the setup calls.
+    EnsSignOwnerSetup {
+        chain_id: String,
+        name: String,
+        owner_account: String,
+        auth_nonce: String,
+        exec_nonce: String,
+        deadline: u64,
+        factory: String,
+        permissioned_resolver_impl: String,
+        stealth_resolver: String,
+        registry: String,
+        gateway_url: String,
+        records_resolver: String,
+        #[serde(default)]
+        index: u32,
+    },
+    /// `personal_sign` by the stealth viewing key over `records_auth_message(name, timestamp)`.
+    EnsRecordsAuth { name: String, timestamp: u64 },
+    /// Which gateway records belong to this wallet (viewing key; view tag, then the address).
+    StealthScan { records: Vec<StealthRecordIn> },
+    /// Signs a transaction from a found stealth address. The key is derived and used here only.
+    StealthSignTransaction { ephemeral_pubkey: String, stealth_address: String, tx: TxIn },
+    /// Encrypts the user's app list (UTF-8, normally JSON) under the seed's app-list key.
+    AppListSeal { data: String },
+    AppListOpen { blob: String },
+}
+
+/// One gateway record (`GET /v1/ens/records`), as the server returns it.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StealthRecordIn {
+    pub stealth_address: String,
+    pub ephemeral_pubkey: String,
+    pub view_tag: u8,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StealthFound {
+    pub stealth_address: String,
+    pub ephemeral_pubkey: String,
 }
 
 impl Request {
@@ -318,6 +377,14 @@ impl Request {
             Request::KohakuAllowPath { .. } => "kohakuAllowPath",
             Request::PpSignNoteEnvelope { .. } => "ppSignNoteEnvelope",
             Request::SealAppKey { .. } => "sealAppKey",
+            Request::EnsIdentity { .. } => "ensIdentity",
+            Request::EnsSignRegistration { .. } => "ensSignRegistration",
+            Request::EnsSignOwnerSetup { .. } => "ensSignOwnerSetup",
+            Request::EnsRecordsAuth { .. } => "ensRecordsAuth",
+            Request::StealthScan { .. } => "stealthScan",
+            Request::StealthSignTransaction { .. } => "stealthSignTransaction",
+            Request::AppListSeal { .. } => "appListSeal",
+            Request::AppListOpen { .. } => "appListOpen",
         }
     }
 }
@@ -386,6 +453,20 @@ pub enum Response {
         grant_hash: String,
         grant_signature: String,
     },
+    EnsIdentity { index: u32, path: String, address: String },
+    EnsRegistration { owner: String, signature: String },
+    EnsOwnerSetup {
+        owner: String,
+        execute_signature: String,
+        authorization: SignedAuthorizationIn,
+        /// The ENSIP-30 record `0x01 || spendPub || viewPub` the batch writes.
+        record: String,
+        meta_address: String,
+    },
+    RecordsAuth { name: String, timestamp: u64, signature: String, viewing_address: String },
+    StealthScan { scanned: u32, found: Vec<StealthFound> },
+    SealedAppList { blob: String },
+    AppList { data: String },
     Error { code: crate::error::ErrorCode, message: String },
 }
 

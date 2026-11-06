@@ -10,6 +10,7 @@
 //! getrandom) and a timer that locks the session even when no message arrives.
 
 pub mod delegation;
+pub mod ens;
 pub mod error;
 pub mod pp;
 pub mod protocol;
@@ -65,6 +66,7 @@ impl CryptoRng for BoxRng {}
 
 /// Work that must run asynchronously (WebGPU, async wasm compile), prepared synchronously
 /// so no `RefCell` borrow is held across an `.await`.
+#[allow(clippy::large_enum_variant)] // one action at a time; boxing would only add noise
 pub enum Action {
     Done(Response),
     ProveWithdraw(Rc<Prover>, Box<WithdrawInputs>),
@@ -458,6 +460,149 @@ impl Core {
                     grant_hash: util::hex0x(&s.grant_hash),
                     grant_signature: util::hex0x(&s.grant_signature),
                 })
+            }
+
+            // ---- ENS name + stealth payments -------------------------------------------------
+            Request::EnsIdentity { index } => {
+                let id = ens::identity(self.session()?.seed(), index)?;
+                done(Response::EnsIdentity { index, path: id.path(), address: lowki_keys::to_checksum_address(&id.address()) })
+            }
+            Request::EnsSignRegistration { chain_id, registrar, label, resolver, duration, nonce, deadline, index } => {
+                let resolver = match resolver {
+                    Some(r) => util::address(&r, "resolver")?.0.0,
+                    None => [0u8; 20],
+                };
+                let r = lowki_ens::lowki_registrar::Registration {
+                    label,
+                    owner: [0u8; 20],
+                    resolver,
+                    duration,
+                    nonce: util::u64q(&nonce, "nonce")?,
+                    deadline,
+                };
+                let (owner, sig) = ens::sign_register(
+                    self.session()?.seed(),
+                    index,
+                    util::u64q(&chain_id, "chainId")?,
+                    &util::address(&registrar, "registrar")?.0.0,
+                    r,
+                )?;
+                done(Response::EnsRegistration { owner: lowki_keys::to_checksum_address(&owner), signature: util::hex0x(&sig) })
+            }
+            Request::EnsSignOwnerSetup {
+                chain_id,
+                name,
+                owner_account,
+                auth_nonce,
+                exec_nonce,
+                deadline,
+                factory,
+                permissioned_resolver_impl,
+                stealth_resolver,
+                registry,
+                gateway_url,
+                records_resolver,
+                index,
+            } => {
+                let a = |s: &str, f: &str| util::address(s, f).map(|a| a.0.0);
+                let p = ens::SetupParams {
+                    name: &name,
+                    factory: a(&factory, "factory")?,
+                    permissioned_resolver_impl: a(&permissioned_resolver_impl, "permissionedResolverImpl")?,
+                    stealth_resolver: a(&stealth_resolver, "stealthResolver")?,
+                    registry: a(&registry, "registry")?,
+                    gateway_url: &gateway_url,
+                    records_resolver: a(&records_resolver, "recordsResolver")?,
+                };
+                let seed = self.session()?.seed();
+                let keys = lowki_stealth::derive_stealth_keys(seed)?;
+                let chain_id = util::u64q(&chain_id, "chainId")?;
+                let s = ens::sign_owner_setup(
+                    seed,
+                    index,
+                    &keys,
+                    chain_id,
+                    &a(&owner_account, "ownerAccount")?,
+                    util::u64q(&auth_nonce, "authNonce")?,
+                    util::u64q(&exec_nonce, "execNonce")?,
+                    deadline,
+                    &p,
+                )?;
+                done(Response::EnsOwnerSetup {
+                    owner: lowki_keys::to_checksum_address(&s.owner),
+                    execute_signature: util::hex0x(&s.execute_signature),
+                    authorization: protocol::SignedAuthorizationIn {
+                        chain_id: s.authorization.chain_id.to_string(),
+                        address: lowki_keys::to_checksum_address(&s.authorization.address),
+                        nonce: s.authorization.nonce.to_string(),
+                        y_parity: s.authorization.y_parity,
+                        r: util::hex0x(&s.authorization.r),
+                        s: util::hex0x(&s.authorization.s),
+                    },
+                    record: util::hex0x(&s.record),
+                    meta_address: keys.meta_address().to_uri(),
+                })
+            }
+            Request::EnsRecordsAuth { name, timestamp } => {
+                if name.is_empty() || name.len() > 255 || name.contains('\n') {
+                    return Err(WorkerError::invalid("name: not an ENS name"));
+                }
+                let keys = lowki_stealth::derive_stealth_keys(self.session()?.seed())?;
+                let msg = lowki_ens::stealth::records_auth_message(&name, timestamp);
+                let sig = lowki_ens::stealth::sign_personal(&keys.viewing, &msg).map_err(ens::ens_err)?;
+                done(Response::RecordsAuth {
+                    name,
+                    timestamp,
+                    signature: util::hex0x(&sig),
+                    viewing_address: lowki_keys::to_checksum_address(&keys.viewing.address()),
+                })
+            }
+            Request::StealthScan { records } => {
+                let keys = lowki_stealth::derive_stealth_keys(self.session()?.seed())?;
+                let spend_pub = keys.spending.public_key();
+                let mut found = Vec::new();
+                for r in &records {
+                    let Ok(eph) = util::bytes(&r.ephemeral_pubkey, "ephemeralPubkey") else { continue };
+                    let Ok(claimed) = util::address(&r.stealth_address, "stealthAddress") else { continue };
+                    let Some(a) = lowki_stealth::check_announcement(&keys.viewing, &spend_pub, &eph, r.view_tag) else {
+                        continue;
+                    };
+                    // A matching view tag is a 1/256 filter: the address must match too.
+                    if a == claimed.0.0 {
+                        found.push(protocol::StealthFound {
+                            stealth_address: lowki_keys::to_checksum_address(&a),
+                            ephemeral_pubkey: util::hex0x(&eph),
+                        });
+                    }
+                }
+                done(Response::StealthScan { scanned: records.len() as u32, found })
+            }
+            Request::StealthSignTransaction { ephemeral_pubkey, stealth_address, tx } => {
+                let keys = lowki_stealth::derive_stealth_keys(self.session()?.seed())?;
+                let eph = util::bytes(&ephemeral_pubkey, "ephemeralPubkey")?;
+                let want = util::address(&stealth_address, "stealthAddress")?;
+                let sk = lowki_stealth::compute_stealth_private_key(&keys.spending, &keys.viewing, &eph)?;
+                if sk.address() != want.0.0 {
+                    return Err(WorkerError::invalid("that stealth address is not this wallet's"));
+                }
+                let key = Zeroizing::new(*sk.to_bytes());
+                let signed = sign::sign_transaction(&key, &tx)?;
+                done(Response::SignedTransaction {
+                    address: lowki_keys::to_checksum_address(&want.0.0),
+                    raw_transaction: util::hex0x(&signed.raw),
+                    hash: format!("{}", signed.hash),
+                })
+            }
+            Request::AppListSeal { data } => {
+                let seed = Zeroizing::new(*self.session()?.seed());
+                let blob = ens::seal_app_list(&seed, data.as_bytes(), &mut self.rng)?;
+                done(Response::SealedAppList { blob: util::hex0x(&blob) })
+            }
+            Request::AppListOpen { blob } => {
+                let blob = util::bytes(&blob, "blob")?;
+                let pt = ens::open_app_list(self.session()?.seed(), &blob)?;
+                let data = String::from_utf8(pt).map_err(|_| WorkerError::invalid("app list is not UTF-8"))?;
+                done(Response::AppList { data })
             }
         }
     }

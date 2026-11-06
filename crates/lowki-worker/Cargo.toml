@@ -23,6 +23,9 @@ lowki-pp-core = { path = "../lowki-pp-core" }
 lowki-groth16 = { path = "../lowki-groth16" }
 lowki-aa = { path = "../lowki-aa" }
 lowki-shares = { path = "../lowki-shares" }
+# ENS names (identity key, registrar/owner-account signatures, ENSIP-30 records). No
+# normalizer: Lowki labels are ASCII by rule (validate_label), which keeps the wasm small.
+lowki-ens = { path = "../lowki-ens", default-features = false }
 
 aes-gcm = { version = "0.10.3", default-features = false, features = ["aes", "alloc", "zeroize"] }
 alloy-dyn-abi = { version = "1", default-features = false, features = ["std", "eip712"] }
