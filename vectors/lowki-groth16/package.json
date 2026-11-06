@@ -1,0 +1,17 @@
+{
+  "name": "lowki-groth16-vectors",
+  "private": true,
+  "type": "module",
+  "description": "Differential vectors + snarkjs verification harness for crates/lowki-groth16",
+  "scripts": {
+    "gen": "tsx gen.ts",
+    "verify-rust": "tsx verify-rust-proofs.ts"
+  },
+  "dependencies": {
+    "@zk-kit/lean-imt": "2.2.4",
+    "poseidon-lite": "0.3.0",
+    "snarkjs": "0.7.5",
+    "tsx": "4.20.6",
+    "viem": "2.51.3"
+  }
+}
