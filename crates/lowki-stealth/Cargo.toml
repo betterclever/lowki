@@ -1,0 +1,21 @@
+[package]
+name = "lowki-stealth"
+version = "0.1.0"
+edition = "2024"
+description = "ERC-5564 (scheme 1, secp256k1 + view tags) stealth addresses, ERC-6538 registry formats, and Lowki stealth key derivation"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Standalone crate: no root workspace yet.
+[workspace]
+
+[dependencies]
+k256 = { version = "0.13.4", default-features = false, features = ["arithmetic"] }
+sha3 = { version = "0.10.8", default-features = false }
+sha2 = { version = "0.10.9", default-features = false }
+hmac = { version = "0.12.1", default-features = false }
+zeroize = { version = "1.8", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+serde_json = "1"
+hex = "0.4"
