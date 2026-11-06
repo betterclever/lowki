@@ -1,0 +1,26 @@
+[package]
+name = "lowki-ens"
+version = "0.1.0"
+edition = "2024"
+description = "ENS (ENSv2 on Sepolia) client primitives for Lowki: names, ABI, resolver/registry/registrar calldata, sans-IO ERC-3668 CCIP-Read, ENSIP-30 stealth records, identity keys"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Standalone crate: no root workspace yet.
+[workspace]
+
+[features]
+default = ["normalize"]
+# ENSIP-15 normalization via `ens-normalize` 0.1.1 (needs std; embeds ~3.4 MB of spec JSON).
+normalize = ["dep:ens-normalize"]
+
+[dependencies]
+lowki-stealth = { path = "../lowki-stealth" }
+k256 = { version = "0.13.4", default-features = false, features = ["arithmetic", "ecdsa"] }
+zeroize = { version = "1.8", default-features = false, features = ["alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+ens-normalize = { version = "=0.1.1", optional = true, default-features = false }
+
+[dev-dependencies]
+serde_json = "1"
+hex = "0.4"
