@@ -44,6 +44,16 @@ const shots = [
   ["23-error-prf-unsupported", "Error: PRF unsupported, with fallback", "screen=error-prf", ready],
   ["24-error-network", "Error: network", "screen=error-network", ready],
   ["25-error-policy-rejected", "Error: delegation policy rejected", "screen=delegation-rejected", (b) => b.waitFor('[data-test="error-policy"]')],
+  // Wallet home: the Lowki origin opened directly (top level, no app). `home=1` forces it here.
+  ["27-wallet-home-signin", "Wallet home: open your wallet (top level)", "home=1", ready],
+  ["28-wallet-home", "Wallet home: private balance, claim a name, your apps", "home=1&screen=home", (b) => b.waitFor('[data-test="home-app"]')],
+  ["29-wallet-home-claim", "Wallet home: claim with a name typed", "home=1&screen=home", async (b) => { await b.waitFor('[data-test="home-app"]'); await b.type('[data-test="claim-label"]', "maya"); }],
+  ["30-wallet-home-claim-invalid", "Wallet home: label rules, inline", "home=1&screen=home", async (b) => { await b.waitFor('[data-test="home-app"]'); await b.type('[data-test="claim-label"]', "ma--ya"); await b.exec("document.querySelector('[data-test=\"claim-label\"]').blur(); return true"); }],
+  ["31-wallet-home-claiming", "Wallet home: claiming (sponsored, three steps)", "home=1&screen=home&speed=3", async (b) => { await b.waitFor('[data-test="home-app"]', { timeout: 20000 }); await b.type('[data-test="claim-label"]', "maya"); await b.click('[data-test="claim"]'); await b.waitFor('[data-test="claim-progress"] .step.done', { timeout: 20000 }); }],
+  ["32-wallet-home-name", "Wallet home: your name and payments found at its stealth addresses", "home=1&screen=home&name=maya", (b) => b.waitFor('[data-test="payment"]')],
+  ["33-wallet-home-move-in", "Wallet home: Move in, pick the app account", "home=1&screen=home", async (b) => { await b.waitFor('[data-test="home-app"]'); await b.click('[data-test="home-move-in"]'); await b.waitFor('[data-test="pick-account"]'); }],
+  ["34-wallet-home-sweep", "Wallet home: move a found payment to private", "home=1&screen=home&name=maya", async (b) => { await b.click('[data-test="sweep"]'); await b.waitFor('[data-test="sweep-confirm"]'); }],
+  ["35-wallet-home-empty", "Wallet home: new user", "home=1&screen=home&empty=1", (b) => b.waitFor('[data-test="apps-empty"]')],
 ];
 
 const variants = [];
@@ -122,6 +132,16 @@ if (!filter) {
   const byName = new Map();
   for (const s of index) { if (!byName.has(s.name)) byName.set(s.name, { title: s.title, files: [] }); byName.get(s.name).files.push(s); }
   const order = (s) => (s.theme === "light" ? 0 : 2) + (s.w === 390 ? 0 : 1);
+  // Live Sepolia shots from tests/e2e/home.mjs (SHOTS=1), when present.
+  for (const [name, title] of [["36-wallet-home-live", "Wallet home, live Sepolia: two apps used, Anon-RPC (Nox) reads"],
+    ["37-wallet-home-live-name", "Wallet home, live Sepolia: test name claimed, a 0.0001 ETH payment found at a stealth address"]]) {
+    for (const v of variants) {
+      const file = `${name}--${v.theme}--${v.w}.png`;
+      if (!fs.existsSync(path.join(OUT, file))) continue;
+      if (!byName.has(name)) byName.set(name, { title, files: [] });
+      byName.get(name).files.push({ name, title, ...v, file });
+    }
+  }
   const rows = [...byName.entries()].map(([name, { title, files }]) => `
   <section>
     <h2><span class="mono">${name}</span> ${title}</h2>
