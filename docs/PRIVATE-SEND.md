@@ -7,6 +7,7 @@ Lowki's private send is a Privacy Pools v1 withdrawal:
 3. A relayer submits `Entrypoint.relay`.
 
 This page covers:
+- the demo stack: the wallet UI's real private send on a local fork, with Anon-RPC reads;
 - the fork run that exercises the whole flow;
 - what in that run is real and what is forked;
 - the runbook for live Sepolia.
@@ -23,6 +24,97 @@ Pool constants (Sepolia, read from chain):
 | `maxRelayFeeBPS` | 100 |
 | Test postman (holds `ASP_POSTMAN` on the Entrypoint) | `0x696FE46495688fC9e99BAd2dAF2133B33de364eA` |
 | Testnet relayer | `https://testnet-relayer.privacypools.com/relayer` (10 bps, fee receiver `0x3497…84d8`) |
+
+## Demo stack: the wallet UI on a fork (one command)
+
+The wallet UI (`apps/wallet-ui`, real backend) does Move in, Send privately and Move out for
+real against a local anvil fork of Sepolia. Proofs are made in the browser by the Lowki worker on
+WebGPU.
+
+```sh
+scripts/demo-stack.sh          # foreground; Ctrl-C stops only what it started
+# then open the printed dapp URL, sign up, fund the printed app address:
+cast rpc --rpc-url http://localhost:8814 anvil_setBalance <app address> 0xDE0B6B3A7640000
+# end to end on the macOS host (Chrome 156, CDP virtual authenticator with PRF, WebGPU):
+mac sh -lc 'cd <lowki> && node scripts/demo-e2e.mjs'
+```
+
+Prerequisites are the same as for the fork run, plus `trunk` (the script builds the glue and the
+wallet dist on first run; `BUILD=1` rebuilds). The Kohaku snapshot for `FORK_BLOCK` must exist
+(`scripts/fork-private-send.sh` writes it once).
+
+| Port | What |
+|---|---|
+| 8810 | Wallet dist; `/v1/` proxied to lowki-server; `/lowki-config.json`; `/circuits/*`; `/pp-snapshot.json` |
+| 8812 | Demo dapp (repo root) |
+| 8813 | lowki-server, dev mode (wallet origin :8810, dapp origin :8812); email codes in `target/demo-stack/server.log` |
+| 8814 | anvil fork, binary copied to `target/demo-stack/bin/lowki-demo-anvil` (survives `pkill -x anvil`) |
+| 8815 | Gateway (`packages/lowki-kohaku-host/demo/stack.ts`): `/rpc` (only standard `eth_*`, proxied to the fork, every call logged with the caller IP in `target/demo-stack/rpc-access.jsonl`), `/ip`, the fork ASP (`/asp/leaves/:root`), the fork relayer (`/relayer/{quote,request,details}`, Kohaku's relayer HTTP API) |
+
+`TUNNEL=1` also starts a cloudflared quick tunnel to :8815 and puts its public URL in the
+wallet config, so the anon network's exits can reach the fork. It is **off by default**, because
+it publishes the gateway on the internet.
+
+### What the UI does
+
+| UI | Stages shown (gourd fill, real timings) | Code |
+|---|---|---|
+| **Move in** (ETH) | Depositing → ASP approval → Syncing pool | Kohaku `prepareShield`, checked byte for byte against worker `ppShield` (`src/private-wallet.ts`). The worker signs it from the app account (`signTransaction`) and Rust broadcasts it over the routed provider. Then Kohaku syncs until the note is approved: the stack's ASP pushes a root that includes the label, 3 s after it sees the deposit. |
+| **Send privately** | Syncing pool → Building proof → Submitting | Kohaku `sync`; then `prepareUnshield` (quote, Merkle proofs, worker `ppProveWithdraw` on WebGPU through `src/prover.ts`); then Kohaku's `PrivacyPoolsBroadcaster` and `RelayerClient` → the fork relayer → `Entrypoint.relay`. The receipt is read back over the provider. |
+| **Move out** | same as Send | A private withdraw to the user's own app account (relayer path, not ragequit). |
+| Home | Private balance = Kohaku's approved ETH; "Private connection" or "Direct connection" plus the reason | |
+
+The done screen lists the proof backend and time, the per-stage times, the relayer fee and the
+nullifier.
+
+The glue is `packages/lowki-kohaku-host/browser-wallet/` (`entry.ts`; a lazy `private.ts`
+chunk). It is bundled to `lowki-glue/` in the dist and exposes `globalThis.lowkiGlue`. Rust calls
+it from `src/backend/real/chain.rs` (reads) and `private.rs` (pool), and passes it a
+`request(req)` bridge to the Rust `WorkerClient`, so signing, envelope signatures and proofs run
+in the same key worker. Kohaku's storage is per session and in memory: each session syncs from
+the snapshot.
+
+### Result (2026-11-06, fork of block 12,078,500, headless Chrome 156 on an M-series Mac)
+
+`scripts/demo-e2e.mjs`: **PASS, all 6 steps.**
+
+| Step | Outcome |
+|---|---|
+| Sign up (email + passkey) | App account `0xb673…be8a`. Funded with `anvil_setBalance` 1 ETH. |
+| Move in 0.1 ETH | Deposit `0xa56574f2…c07540a`, 0.7 s. ASP approval 4.2 s. Private balance **0.0990 ETH** (1% vetting fee). |
+| Send privately 0.05 ETH → fresh `0x4175…cCD1` | Syncing pool 0.1 s. Building proof 0.3 s, of which the **proof is 215 ms on WebGPU**. Submitting 1.0 s. `Entrypoint.relay` `0x61bc6b41…12de1cf` (block 12078504, 990,708 gas, sent by the fork relayer). |
+| On the fork | Recipient 0 → **0.04975 ETH** (0.05 minus the 50 bps fee). `Pool.nullifierHashes(2140…3858)` = **true**. |
+| Connection shown on Home | "Direct connection: The demo fork runs on this machine and has no public URL (the tunnel is off), so the anon network can't reach it." The gateway log shows 145 RPC requests, all `via: local`. |
+| Anon-RPC, same glue, wallet origin and CSP, live Sepolia (reads only) | `anonymous: true`, Nox, boot 3.4 s, `eth_getBalance` of the app address 2.1 s, head block 12,078,786. The egress IP seen by ipify through the session was **98.92.70.228** (Nox exit, AWS); this machine's direct IP is 45.127.45.75. |
+
+An earlier run without the faster receipt polling gave the same proof time (208 ms, WebGPU).
+`TUNNEL=1` (fork reads over anon end to end) was **not run**: starting a public ingress tunnel was
+not permitted in this session.
+
+### Where each call goes
+
+| Call | Anon on (default) | `rpc=direct`, no public RPC, or anon boot failed |
+|---|---|---|
+| Balances, nonce, gas, fees, `eth_estimateGas`, `eth_call`, receipts, `eth_sendRawTransaction` (wallet, `chain.rs` → `lowkiGlue.rpc`) | Anon-RPC (Nox on Chromium, Nym on Safari/WebKit) to `rpcUrl` | Direct to `directRpcUrl`. Home says why. |
+| Kohaku pool sync increments, `RootUpdated`, roots, receipts (Kohaku `host.provider`) | Anon-RPC, same session | direct |
+| ASP leaves, relayer quote and request (Kohaku `host.network`) | Anon-RPC session fetch (`anonFetchFor`) to the public gateway URLs | direct to `localhost:8815` |
+| Cold pool state (public, user-neutral) | Same-origin `pp-snapshot.json`: the public state at the fork block, so no cold scan of about 3,000 RPC calls | same |
+| Circuit artifacts | Same-origin `circuits/` (sha256-pinned in the worker) | same |
+| Anon bootstrap (one specifier read per session) | Direct to the bootstrap RPC (Tenderly for Nox, publicnode mainnet for Nym), as in `src/anon-provider.ts` | n/a |
+| Egress check | `ipEchoUrl` over the session (the gateway's `/ip`, or ipify) | n/a |
+
+Without a `lowki-config.json`, the wallet uses `LOWKI_RPC_URL` (publicnode Sepolia) **over Anon-RPC
+by default**. There is no private send in that mode, because no relayer or ASP is configured.
+
+### Real versus forked (demo stack)
+
+- **Real:** the wallet UI and its real backend; lowki-server; passkeys with PRF (virtual
+  authenticator); the Lowki worker (keys, signatures, `ppShield`, `ppProveWithdraw` on WebGPU);
+  Kohaku's plugin, relayer client and broadcaster; the Sepolia contracts and pool state at the fork
+  block; the anon-rpc harness and Nox (live Sepolia check).
+- **Forked or simulated:** ETH from `anvil_setBalance`; the ASP (postman impersonation, our own
+  leaf server); the relayer (a fork account, no signed fee commitment); the reads of the fork
+  itself, which go direct unless `TUNNEL=1`.
 
 ## Fork run (one command)
 
@@ -174,6 +266,9 @@ Notes:
 
 - **Note secrets pass through JS.** Kohaku derives them for the witness. The adapter adds speed (WebGPU in the browser) and a public-signal cross-check, not isolation. Isolation needs the Kohaku seams described in `packages/lowki-kohaku-host/README.md` ("Proving").
 - **Note-reference lookup.** The prover adapter finds the note by walking `(depositIndex, secretIndex)` with `ppNote`. A `noteRef` from Kohaku, or a worker request that matches a precommitment, would remove the walk. That is a possible worker change; nothing was edited in `crates/`.
-- **Browser runs.** The fork flow runs in Node. The same host code runs in the browser with `WebWorkerTransport`, but that browser run on a fork has not been done.
+- **Browser runs.** Done: see "Demo stack". The wallet UI runs the flow in Chrome with WebGPU proofs. Safari/WebKit is untested.
 - **Paymaster path.** Not exercised; see above.
-- **Anonymity.** Fork reads go to a local anvil. On live Sepolia, per-user calls (the relayer, receipts, balances) should go through the anon provider (`src/anon-provider.ts`, see the host README). The cold log scan can use direct RPC or the cache.
+- **Anonymity.** The wallet routes every chain read, the broadcast, the ASP fetch and the relayer through Anon-RPC by default ("Where each call goes"). On the local fork that only happens with `TUNNEL=1`, which was not exercised here. The cold scan comes from a snapshot.
+- **Kohaku state is per session.** It is kept in memory because the worker has no storage-key request yet. Each session re-syncs from the snapshot, which takes under a second on the fork. On live Sepolia, the snapshot would need refreshing.
+- **CSP.** The wallet's `connect-src` now allows `https:`/`wss:`/`http://localhost:*`, and `worker-src`/`script-src` allow `blob:`. The harness iframe inherits the policy and fetches its pinned bundle from on-chain resolvers.
+- **Ragequit Move out.** Not wired into the UI. Move out is a relayer withdraw, so it needs ASP approval.
