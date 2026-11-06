@@ -1,0 +1,50 @@
+# Lowki ENSv2 contracts.
+#
+# Dependencies are compiled from the read-only vendor clone of fluidkey/stealth-ens-resolver
+# (pinned commit in README.md), which itself pins ensdomains/namechain (contracts-v2) at tag
+# v2-mainnet-deployment-1, the code ENS deployed to Sepolia on 2026-10-01. Nothing is copied:
+# remappings point into ../../vendor. Compiler settings match ENSv2's production build
+# (solc 0.8.25, cancun, optimizer 1000 runs), as Fluidkey's repo does.
+[profile.default]
+src = "src"
+out = "out"
+test = "test"
+script = "script"
+libs = ["../../vendor/stealth-ens-resolver/lib"]
+solc_version = "0.8.25"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 1000
+bytecode_hash = "none"
+cbor_metadata = false
+allow_paths = ["../../vendor/stealth-ens-resolver"]
+include_paths = []
+ignored_warnings_from = ["../../vendor/"]
+fs_permissions = [{ access = "read-write", path = "./deployments" }]
+isolate = true
+
+remappings = [
+  "@fluidkey/=../../vendor/stealth-ens-resolver/src/",
+  "@fluidkey-test/=../../vendor/stealth-ens-resolver/test/",
+  "@fluidkey-script/=../../vendor/stealth-ens-resolver/script/",
+  "@ensv2/=../../vendor/stealth-ens-resolver/lib/namechain/contracts/src/",
+  "@ens/contracts/=../../vendor/stealth-ens-resolver/lib/namechain/contracts/lib/ens-contracts/contracts/",
+  "@ensdomains/buffer/=../../vendor/stealth-ens-resolver/lib/namechain/contracts/lib/buffer/",
+  "@openzeppelin/contracts/=../../vendor/stealth-ens-resolver/lib/namechain/contracts/lib/openzeppelin-contracts/contracts/",
+  "forge-std/=../../vendor/stealth-ens-resolver/lib/forge-std/src/",
+  "../../vendor/stealth-ens-resolver/lib/namechain/contracts/lib/ens-contracts/contracts/utils/LibMem/=../../vendor/stealth-ens-resolver/lib/namechain/contracts/src/utils/",
+  "../../vendor/stealth-ens-resolver/lib/namechain/contracts/lib/ens-contracts/:@openzeppelin/contracts=../../vendor/stealth-ens-resolver/lib/namechain/contracts/lib/openzeppelin-contracts-v4/contracts",
+  "../../vendor/stealth-ens-resolver/lib/namechain/contracts/lib/ens-contracts/:@openzeppelin/contracts-v5=../../vendor/stealth-ens-resolver/lib/namechain/contracts/lib/openzeppelin-contracts/contracts",
+  "~src/=../../vendor/stealth-ens-resolver/lib/namechain/contracts/src/",
+  "~test/=../../vendor/stealth-ens-resolver/lib/namechain/contracts/test/",
+  "@ensdomains/verifiable-factory/=../../vendor/stealth-ens-resolver/lib/namechain/contracts/lib/verifiable-factory/src/",
+  "@openzeppelin/contracts-upgradeable/=../../vendor/stealth-ens-resolver/lib/namechain/contracts/lib/openzeppelin-contracts-upgradeable/contracts/",
+  "solady/=../../vendor/stealth-ens-resolver/lib/namechain/contracts/lib/solady/src/",
+]
+
+[fmt]
+line_length = 100
+sort_imports = true
+
+[lint]
+lint_on_build = false
