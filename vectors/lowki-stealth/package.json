@@ -1,0 +1,15 @@
+{
+  "name": "lowki-stealth-vectors",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen": "tsx gen.ts"
+  },
+  "dependencies": {
+    "@noble/secp256k1": "2.3.0",
+    "@scopelift/stealth-address-sdk": "1.0.0-beta.5",
+    "@scure/bip32": "2.0.1",
+    "tsx": "4.23.15",
+    "viem": "2.57.16"
+  }
+}
