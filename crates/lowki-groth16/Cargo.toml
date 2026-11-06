@@ -1,0 +1,87 @@
+[package]
+name = "lowki-groth16"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Groth16 (bn128) prover for the Privacy Pools v1 commitment/withdraw circuits, snarkjs-compatible, native + wasm32"
+publish = false
+
+# Standalone crate (no root workspace yet).
+[workspace]
+
+[features]
+default = []
+# Multi-threaded proving (rayon) for native builds. Do NOT enable on wasm32-unknown-unknown.
+parallel = [
+    "ark-ff/parallel",
+    "ark-ec/parallel",
+    "ark-poly/parallel",
+    "ark-groth16/parallel",
+    "ark-std/parallel",
+    "dep:rayon",
+]
+# WebGPU proving (`GpuProver`): G1 + G2 MSMs on the GPU via lowki-gpu (wgpu). Native
+# (Metal/Vulkan) and wasm32 (browser WebGPU). The CPU path is unchanged and stays the default.
+webgpu = ["dep:lowki-gpu"]
+
+[dependencies]
+ark-bn254 = { version = "0.5.0", default-features = false, features = ["curve"] }
+ark-ec = { version = "0.5.0", default-features = false }
+ark-ff = { version = "0.5.0", default-features = false }
+ark-groth16 = { version = "0.5.0", default-features = false }
+ark-poly = { version = "0.5.0", default-features = false }
+ark-relations = { version = "0.5.1", default-features = false }
+ark-std = { version = "0.5.0", default-features = false, features = ["std"] }
+# Pure-Rust wasm interpreter that runs circom's witness-calculator .wasm (works on wasm32 too).
+# `auto-dispatch`: tail-call dispatch only where LLVM guarantees sibling calls (optimized builds
+# on supported targets), loop dispatch otherwise. Without it, unoptimized builds overflow the stack.
+wasmi = { version = "2.0.0", default-features = false, features = ["std", "validate", "auto-dispatch"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zeroize = "1.8"
+rayon = { version = "1", optional = true }
+lowki-gpu = { path = "../lowki-gpu", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+# Witness generation on the host's WebAssembly engine (src/witness/js.rs). Already in the
+# tree through getrandom's `js` backend (and wgpu with `webgpu`).
+wasm-bindgen = "0.2.130"
+js-sys = "0.3.107"
+wasm-bindgen-futures = "0.4.80"
+
+[dev-dependencies]
+serde_json = "1"
+pollster = "0.4"
+rand_chacha = "0.3"
+sha2 = "0.10"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "=0.3.80"
+wasm-bindgen = "=0.2.130"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+
+[[example]]
+name = "gpu_profile"
+required-features = ["webgpu"]
+
+[profile.test]
+opt-level = 3
+
+[profile.dev]
+opt-level = 1
+
+# The interpreter and field arithmetic dominate run time; always optimize them.
+[profile.dev.package.wasmi]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+debug = false
+[profile.dev.package.ark-ff]
+opt-level = 3
+[profile.dev.package.ark-ec]
+opt-level = 3
+[profile.dev.package.ark-bn254]
+opt-level = 3
