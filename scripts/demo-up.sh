@@ -415,7 +415,7 @@ if [ -f "$SITE_SRC/dist/index.html" ]; then
   fi
   # Runtime links (the site reads dist/site-config.json at load; keys: repo, video, demos[]).
   jq -n --arg tips "$TIPS_PUB/" --arg privy "$PRIVY_URL" --arg wallet "$WALLET_PUB/" --arg inbox "$TIPS_PUB/creator.html?name=chai.lowki.eth" \
-     --arg repo "${SITE_REPO_URL:-https://github.com/betterclever/lowki}" --arg video "${SITE_VIDEO_URL:-}" '{
+     --arg repo "${SITE_REPO_URL:-https://github.com/betterclever/lowki}" --arg video "${SITE_VIDEO_URL:-https://youtu.be/mQe8CaCkrUA}" '{
     _comment: "Written by scripts/demo-up.sh (SITE_REPO_URL, SITE_VIDEO_URL). Live links are Cloudflare quick tunnels.",
     repo: $repo, video: $video,
     demos: [
