@@ -145,7 +145,7 @@ http.createServer((req, res) => {
   res.writeHead(200, {
     'content-type': TYPES[ext] ?? 'application/octet-stream',
     'content-length': fs.statSync(file).size,
-    'cache-control': ext === '.wasm' || ext === '.woff2' ? 'public, max-age=3600' : 'no-store',
+    'cache-control': ext === '.woff2' ? 'public, max-age=3600' : 'no-store',
   });
   if (req.method === 'HEAD') return void res.end();
   fs.createReadStream(file).pipe(res);
