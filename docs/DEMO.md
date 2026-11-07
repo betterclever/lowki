@@ -5,15 +5,15 @@ Live URLs right now (rewritten by `scripts/demo-up.sh` every time it runs):
 <!-- URLS:BEGIN -->
 | What | URL |
 |---|---|
-| Lowki Tips | https://jim-cambridge-meals-court.trycloudflare.com/ |
-| Creator inbox | https://jim-cambridge-meals-court.trycloudflare.com/creator.html?name=chai.lowki.eth |
-| Privy Swap | https://configure-translator-encourage-consortium.trycloudflare.com/?app=app_30f7d419eb5c11072449&wallet=https%3A%2F%2Fsystematic-contemporary-isbn-passive.trycloudflare.com%2F%3Fapp_name%3DPrivy%2520Swap |
-| Wallet home | https://systematic-contemporary-isbn-passive.trycloudflare.com/ |
-| Showcase site | https://msgid-applied-jar-kay.trycloudflare.com/ |
-| Fork RPC (Anon-RPC target) | https://appearing-ban-bizarre-nearby.trycloudflare.com/rpc |
+| Lowki Tips | https://lowki-tips.slopwareinc.xyz/ |
+| Creator inbox | https://lowki-tips.slopwareinc.xyz/creator.html?name=chai.lowki.eth |
+| Privy Swap | https://lowki-swap.slopwareinc.xyz/?app=app_30f7d419eb5c11072449&wallet=https%3A%2F%2Flowki-wallet.slopwareinc.xyz%2F%3Fapp_name%3DPrivy%2520Swap |
+| Wallet home | https://lowki-wallet.slopwareinc.xyz/ |
+| Showcase site | https://lowki.slopwareinc.xyz/ |
+| Fork RPC (Anon-RPC target) | https://lowki-rpc.slopwareinc.xyz/rpc |
 | ENS gateway (on chain) | https://industry-hobbies-travels-exciting.trycloudflare.com/v1/ens/gateway |
 
-_Written by scripts/demo-up.sh at 2026-11-07T02:06:35Z; Sepolia fork at block 12078882._
+_Written by scripts/demo-up.sh at 2026-11-07T02:41:47Z; Sepolia fork at block 12078882._
 <!-- URLS:END -->
 
 ## 1. Morning steps (about 10 minutes)
