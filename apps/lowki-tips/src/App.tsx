@@ -10,11 +10,14 @@ type View = { kind: 'list' } | { kind: 'tip'; creator: Creator } | { kind: 'priv
 
 export default function App() {
   const { ready, authenticated } = usePrivy();
-  const [view, setView] = useState<View>({ kind: 'list' });
+  const [view, setView] = useState<View>(() => {
+    const c = creatorFromName(new URLSearchParams(location.search).get('tip') ?? '');
+    return c ? { kind: 'tip', creator: c } : { kind: 'list' };
+  });
 
   if (!ready) {
     return (
-      <Shell>
+      <Shell step={1}>
         <div className="loading" aria-live="polite">
           <Spinner /> Connecting to your wallet…
         </div>
@@ -23,7 +26,7 @@ export default function App() {
   }
   if (!authenticated) return <Landing />;
   return (
-    <Shell header={<Header />}>
+    <Shell header={<Header />} step={view.kind === 'private' ? 3 : 2}>
       {view.kind === 'list' && (
         <CreatorList onTip={(creator) => setView({ kind: 'tip', creator })} onPrivate={(creator) => setView({ kind: 'private', creator })} />
       )}
@@ -35,7 +38,53 @@ export default function App() {
   );
 }
 
-function Shell({ header, children }: { header?: React.ReactNode; children: React.ReactNode }) {
+const MY_NAME_KEY = 'lowki-tips:my-name';
+
+function loadMyName(): string {
+  try {
+    return localStorage.getItem(MY_NAME_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** A tippable "creator" for any name under the parent (e.g. clever.lowki.eth), or null if invalid. */
+function creatorFromName(raw: string, displayName?: string): Creator | null {
+  const name = raw.trim().toLowerCase();
+  const suffix = `.${config.ens.parentName}`;
+  const label = name.endsWith(suffix) ? name.slice(0, -suffix.length) : '';
+  if (!label || !/^[a-z0-9-]+(\.[a-z0-9-]+)*$/.test(label)) return null;
+  return { label, displayName: displayName ?? label.split('.')[0]!.replace(/^./, (ch) => ch.toUpperCase()), tagline: '', hue: 140 };
+}
+
+/** The wallet's own home page, top level, no app params. */
+function walletHome(): string {
+  const u = new URL(config.lowki.walletUrl);
+  return u.origin + u.pathname;
+}
+
+const STEPS = ['Sign in', 'Tip a creator', 'Tip privately'];
+
+function Steps({ current }: { current: number }) {
+  return (
+    <nav className="steps-wrap" aria-label="Demo steps">
+      <ol className="steps">
+        {STEPS.map((label, i) => {
+          const n = i + 1;
+          const state = n < current ? 'done' : n === current ? 'now' : 'next';
+          return (
+            <li key={label} className={`step step-${state}${n === 3 ? ' step-private' : ''}`} aria-current={state === 'now' ? 'step' : undefined}>
+              <span className="step-dot">{state === 'done' ? '✓' : n}</span>
+              <span className="step-label">{label}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+function Shell({ header, step, children }: { header?: React.ReactNode; step: number; children: React.ReactNode }) {
   return (
     <div className="app">
       {header ?? (
@@ -43,6 +92,7 @@ function Shell({ header, children }: { header?: React.ReactNode; children: React
           <Brand />
         </header>
       )}
+      <Steps current={step} />
       <main className="page">{children}</main>
       <Footer />
     </div>
@@ -54,24 +104,20 @@ function Shell({ header, children }: { header?: React.ReactNode; children: React
 function Landing() {
   const { login } = usePrivy();
   return (
-    <Shell>
+    <Shell step={1}>
       <section className="hero" data-testid="landing">
-        <p className="eyebrow">For the people who make your internet better</p>
         <h1>
           Tip your favourite <span className="hl">creators</span>
         </h1>
-        <p className="lede">
-          Send a little ETH to the writers, musicians and makers you love. Every tip lands at a fresh address, so nobody can
-          add up who paid whom.
-        </p>
-        <button className="btn btn-accent btn-lg" data-testid="signin" onClick={() => login()}>
+        <p className="lede">Every tip lands at a fresh address. Nobody can add up who paid whom.</p>
+        <button className="btn btn-accent btn-xl" data-testid="signin" onClick={() => login()}>
           Sign in
         </button>
         <p className="hint">Passkey or email. No seed phrase, no extension.</p>
         <ul className="hero-creators" aria-label="Creators on Lowki Tips">
           {config.creators.map((c) => (
             <li key={c.label}>
-              <Avatar creator={c} size={44} />
+              <Avatar creator={c} size={40} />
               <span>
                 <strong>{c.displayName}</strong>
                 <span className="mono">{ensName(c)}</span>
@@ -108,14 +154,15 @@ function Header() {
       <div className="who">
         {address && (
           <span className="id-chip" tabIndex={0} aria-describedby="who-tip" data-testid="who">
+            <span className="id-dot" aria-hidden="true" />
             <span className="id-row">
-              <span className="id-k">Address</span>
               <span className="mono" data-testid="user-address" data-full={address}>
                 {short(address)}
               </span>
             </span>
+            <span className="id-sep" aria-hidden="true" />
             <span className="id-row">
-              <span className="id-k">User ID</span>
+              <span className="id-k">ID</span>
               <span className="mono" data-testid="user-id" data-full={user?.id}>
                 {short(user?.id ?? '', 14, 4)}
               </span>
@@ -158,32 +205,34 @@ function Header() {
 // ------------------------------------------------------------------------------------ creators
 
 function CreatorList({ onTip, onPrivate }: { onTip: (c: Creator) => void; onPrivate: (c: Creator) => void }) {
+  const [myName, setMyName] = useState(loadMyName);
+  const me = myName ? creatorFromName(myName, 'You') : null;
+  const cards: { c: Creator; id: string; you?: boolean }[] = [
+    ...(me ? [{ c: { ...me, tagline: 'Your name. Share it to get tipped.' }, id: 'you', you: true }] : []),
+    ...config.creators.map((c) => ({ c, id: c.label })),
+  ];
   return (
     <section data-testid="creators">
       <div className="section-head">
-        <h1>Creators</h1>
-        <p className="muted">Each name is a Lowki stealth name. Look it up twice and you get two different addresses.</p>
+        <h1>Pick a creator</h1>
+        <p className="muted">Each name gives a new address every time you look it up.</p>
       </div>
-      <ul className="creator-grid">
-        {config.creators.map((c) => {
+      <ul className="creator-grid" style={{ ['--cols' as string]: String(cards.length) }}>
+        {cards.map(({ c, id, you }) => {
           const name = ensName(c);
           const count = tipsFor(name).length;
           return (
-            <li key={c.label} className="card creator" data-testid={`creator-${c.label}`}>
-              <div className="creator-top">
-                <Avatar creator={c} />
-                <div>
-                  <h2>{c.displayName}</h2>
-                  <p className="mono ens">{name}</p>
-                </div>
-              </div>
+            <li key={id} className={`card creator${you ? ' creator-you' : ''}`} data-testid={`creator-${id}`}>
+              <Avatar creator={c} size={72} />
+              <h2>{you ? 'You' : c.displayName}</h2>
+              <p className="mono ens">{name}</p>
               <p className="tagline">{c.tagline}</p>
-              {count > 0 && <p className="muted small">You tipped {count === 1 ? 'once' : `${count} times`} this session</p>}
+              <p className="tipped small">{count > 0 ? `You tipped ${count === 1 ? 'once' : `${count} times`}` : '\u00a0'}</p>
               <div className="creator-actions">
-                <button className="btn btn-accent" data-testid={`tip-${c.label}`} onClick={() => onTip(c)}>
+                <button className="btn btn-accent" data-testid={`tip-${id}`} onClick={() => onTip(c)}>
                   Tip {config.tip.amountEth} ETH
                 </button>
-                <button className="btn btn-private" data-testid={`private-${c.label}`} onClick={() => onPrivate(c)}>
+                <button className="btn btn-private-outline" data-testid={`private-${id}`} onClick={() => onPrivate(c)}>
                   <LockIcon /> Tip privately
                 </button>
               </div>
@@ -191,7 +240,167 @@ function CreatorList({ onTip, onPrivate }: { onTip: (c: Creator) => void; onPriv
           );
         })}
       </ul>
+      <div className="side-cards">
+        <TipByName onTip={onTip} />
+        <GetTipped myName={myName} setMyName={setMyName} />
+      </div>
     </section>
+  );
+}
+
+function GetTipped({ myName, setMyName }: { myName: string; setMyName: (n: string) => void }) {
+  const parent = config.ens.parentName;
+  const [value, setValue] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const share = `${location.origin}${location.pathname}?tip=${encodeURIComponent(myName)}`;
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = value.trim().toLowerCase();
+    if (!creatorFromName(name)) {
+      setError(`Enter your name ending in .${parent}`);
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await resolveName(name);
+      try {
+        localStorage.setItem(MY_NAME_KEY, name);
+      } catch {
+        /* private mode: keep it for this visit */
+      }
+      setMyName(name);
+    } catch {
+      setError(`${name} didn't resolve. Claim it in your Lowki wallet first.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card get-tipped" data-testid="get-tipped">
+      <div className="by-name-text">
+        <h2>Get tipped</h2>
+        <p className="muted">Your tips are found by your wallet with your private viewing key. This app can't see them.</p>
+      </div>
+      {myName ? (
+        <div className="share">
+          <span className="id-k">Your tip link</span>
+          <div className="by-name-row">
+            <input className="mono" readOnly value={share} data-testid="share-link" aria-label="Your tip link" onFocus={(e) => e.target.select()} />
+            <button
+              className="btn btn-ghost"
+              type="button"
+              onClick={() => {
+                void navigator.clipboard?.writeText(share).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                });
+              }}
+            >
+              {copied ? 'Copied ✓' : 'Copy'}
+            </button>
+          </div>
+          <button
+            className="linkish small"
+            type="button"
+            onClick={() => {
+              try {
+                localStorage.removeItem(MY_NAME_KEY);
+              } catch {
+                /* ignore */
+              }
+              setMyName('');
+            }}
+          >
+            Not {myName}? Change
+          </button>
+        </div>
+      ) : (
+        <form className="by-name-row" onSubmit={(e) => void save(e)}>
+          <input
+            className="mono"
+            data-test="get-tipped-input"
+            data-testid="get-tipped-input"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={`you.${parent}`}
+            aria-label="Your name"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+          />
+          <button className="btn btn-accent" type="submit" disabled={busy} data-test="get-tipped-save" data-testid="get-tipped-save">
+            {busy ? <Spinner /> : 'Save'}
+          </button>
+        </form>
+      )}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="get-tipped-links">
+        <a className="btn btn-private" href={walletHome()} target="_blank" rel="noreferrer" data-test="my-tips" data-testid="my-tips">
+          <LockIcon /> My tips
+        </a>
+        {!myName && (
+          <a className="small" href={walletHome()} target="_blank" rel="noreferrer">
+            Don't have one? Claim a name in your Lowki wallet
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Tip any stealth name under the parent (e.g. your own), through the same tip screen. */
+function TipByName({ onTip }: { onTip: (c: Creator) => void }) {
+  const parent = config.ens.parentName;
+  const [value, setValue] = useState('');
+  const [error, setError] = useState('');
+  const go = (e: React.FormEvent) => {
+    e.preventDefault();
+    const c = creatorFromName(value);
+    if (!c) {
+      setError(`Enter a name ending in .${parent}, like clever.${parent}`);
+      return;
+    }
+    setError('');
+    onTip(c);
+  };
+  return (
+    <form className="card by-name" onSubmit={go} data-testid="tip-by-name">
+      <div className="by-name-text">
+        <h2>Tip anyone by name</h2>
+        <p className="muted">Any <span className="mono">*.{parent}</span> name. Yours too.</p>
+      </div>
+      <div className="by-name-row">
+        <input
+          className="mono"
+          data-test="tip-name-input"
+          data-testid="tip-name-input"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={`clever.${parent}`}
+          aria-label="Name to tip"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+        <button className="btn btn-accent" type="submit" data-test="tip-name-go" data-testid="tip-name-go">
+          Tip {config.tip.amountEth} ETH
+        </button>
+      </div>
+      {error && (
+        <p className="error" role="alert" data-testid="tip-name-error">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }
 
@@ -269,66 +478,67 @@ function TipScreen({ creator, onBack }: { creator: Creator; onBack: () => void }
     void resolve();
   };
 
+  const done = phase === 'done' && !!hash;
   return (
-    <section className="tip-layout" data-testid="tip-screen">
+    <section className="flow" data-testid="tip-screen">
       <button className="back" onClick={onBack}>
         ← All creators
       </button>
-      <div className="card tip-card">
-        <div className="creator-top">
-          <Avatar creator={creator} size={64} />
-          <div>
-            <p className="eyebrow">Tip</p>
-            <h1>{creator.displayName}</h1>
-            <p className="mono ens">{name}</p>
-          </div>
-        </div>
+      <div className="card flow-card">
+        <CreatorHead creator={creator} name={name} eyebrow={`Tip ${config.tip.amountEth} ETH`} />
 
-        <div className="resolution" aria-live="polite">
+        <div className={`resolution${done ? ' is-done' : ''}`} aria-live="polite">
           <p className="res-label">
-            <span className="mono">{name}</span> resolves to
+            {done ? (
+              <strong className="res-done">✓ Sent to a fresh address</strong>
+            ) : (
+              <>
+                <span className="mono">{name}</span> resolves to
+              </>
+            )}
           </p>
           {resolving && (
             <p className="res-address pending">
-              <Spinner /> Asking ENS (CCIP-Read through the Lowki gateway)…
+              <Spinner /> Looking up {name}…
             </p>
           )}
-          {resolveError && <p className="error">Couldn't resolve {name}: {resolveError}</p>}
+          {resolveError && (
+            <p className="error res-error" role="alert" data-testid="resolve-error">
+              {name} didn't resolve. Check the name and try again.
+              <span className="small muted"> ({resolveError})</span>
+            </p>
+          )}
           {res && (
             <>
               <p className="res-address mono" data-testid="resolved-address">
                 {res.address}
               </p>
-              {phase === 'done' ? (
-                <Badge tone="ok">✓ Paid just now</Badge>
-              ) : res.fresh ? (
-                <Badge tone="fresh" testid="fresh-badge">
-                  ✦ Never seen before
-                </Badge>
-              ) : (
-                <Badge tone="muted">Already used</Badge>
-              )}
+              <div className="chips">
+                {done && <Badge tone="ok">✓ Paid {config.tip.amountEth} ETH</Badge>}
+                {res.fresh ? (
+                  <Badge tone="fresh" testid={done ? undefined : 'fresh-badge'}>
+                    ✦ Never seen before
+                  </Badge>
+                ) : (
+                  !done && <Badge tone="muted">Already used</Badge>
+                )}
+              </div>
             </>
           )}
         </div>
 
-        <p className="explainer">
-          <strong>Each tip goes to a fresh address.</strong> {creator.displayName}'s name holds a stealth meta-address, so every
-          lookup derives a new one-time address that only {creator.displayName} can find and spend. ENS verifies it on chain
-          before your wallet sees it.
-        </p>
+        {!done && <p className="explainer">Only {creator.displayName} can find and spend it. ENS verifies it on chain.</p>}
 
-        {phase === 'done' && hash ? (
+        {done ? (
           <div className="sent" data-testid="tip-sent">
-            <p className="sent-title">Tip sent · {config.tip.amountEth} ETH</p>
-            <TxHash hash={hash} />
-            <button className="btn btn-accent" data-testid="tip-again" onClick={again}>
-              Tip again
+            <TxHash hash={hash!} />
+            <button className="btn btn-accent btn-lg btn-block" data-testid="tip-again" onClick={again}>
+              Tip again → new address
             </button>
           </div>
         ) : (
           <button
-            className="btn btn-accent btn-lg"
+            className="btn btn-accent btn-lg btn-block"
             data-testid="send-tip"
             disabled={!res || phase !== 'idle'}
             onClick={() => void send()}
@@ -358,21 +568,38 @@ function TipScreen({ creator, onBack }: { creator: Creator; onBack: () => void }
   );
 }
 
+function CreatorHead({ creator, name, eyebrow }: { creator: Creator; name: string; eyebrow: string }) {
+  return (
+    <div className="creator-head">
+      <Avatar creator={creator} size={56} />
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h1>{creator.displayName}</h1>
+        <p className="mono ens">{name}</p>
+      </div>
+    </div>
+  );
+}
+
 function PastTips({ name, history }: { name: string; history: TipRecord[] }) {
   const unique = new Set(history.map((t) => t.address.toLowerCase())).size;
   return (
     <aside className="card past" data-testid="past-tips">
-      <h2>Your tips to {name}</h2>
-      <p className="muted small">This session · {history.length === 0 ? 'none yet' : `${history.length} tips, ${unique} different addresses`}</p>
-      <ol className="past-list">
-        {history.map((t) => (
-          <li key={t.hash} data-testid="past-tip">
-            <span className="mono">{short(t.address, 10, 8)}</span>
-            {t.private ? <Badge tone="private">private</Badge> : <span className="muted small">{t.amountEth} ETH</span>}
-          </li>
-        ))}
-      </ol>
-      {history.length > 1 && unique === history.length && <p className="ok small">✓ All different. Nobody can add them up.</p>}
+      <div className="past-head">
+        <h2>Your tips to {name}</h2>
+        <span className="muted small">{history.length === 0 ? 'none yet' : `${history.length} tips · ${unique} addresses`}</span>
+      </div>
+      {history.length > 0 && (
+        <ol className="past-list">
+          {history.map((t) => (
+            <li key={t.hash} data-testid="past-tip">
+              <span className="mono">{short(t.address, 10, 8)}</span>
+              {t.private ? <Badge tone="private">private</Badge> : <span className="muted small">{t.amountEth} ETH</span>}
+            </li>
+          ))}
+        </ol>
+      )}
+      {history.length > 1 && unique === history.length && <p className="all-diff">✓ All different. Nobody can add them up.</p>}
     </aside>
   );
 }
@@ -405,51 +632,40 @@ function PrivateTipScreen({ creator, onBack }: { creator: Creator; onBack: () =>
     }
   };
 
+  const done = phase === 'done' && !!hash;
   return (
-    <section className="tip-layout" data-testid="private-screen">
+    <section className="flow" data-testid="private-screen">
       <button className="back" onClick={onBack}>
         ← All creators
       </button>
-      <div className="card private-card">
-        <div className="creator-top">
-          <Avatar creator={creator} size={64} />
-          <div>
-            <p className="eyebrow">Private tip</p>
-            <h1>{creator.displayName}</h1>
-            <p className="mono ens">{name}</p>
-          </div>
-        </div>
-        <ul className="private-points">
-          <li>
-            <strong>From your private balance.</strong> The tip leaves a Privacy Pool, so nothing on chain links it to your
-            address.
-          </li>
-          <li>
-            <strong>Proved on your device.</strong> Your wallet builds the zero-knowledge proof in this browser. Watch the
-            gourd fill.
-          </li>
-          <li>
-            <strong>To a fresh address.</strong> {res ? <span className="mono" data-testid="private-to">{short(res.address, 10, 8)}</span> : resolving ? 'resolving…' : '—'},
-            derived from {name} just now.
-          </li>
-        </ul>
-        <p className="small topup">
-          Private balance empty?{' '}
-          <a href={walletHomeUrl()} target="_blank" rel="noreferrer" data-testid="open-wallet">
-            Move ETH in from your Lowki wallet
-          </a>
-        </p>
-        {resolveError && <p className="error">Couldn't resolve {name}: {resolveError}</p>}
-        {phase === 'done' && hash ? (
+      <div className="card flow-card private-card">
+        <CreatorHead creator={creator} name={name} eyebrow="Private tip" />
+        {done ? (
           <div className="sent private-sent" data-testid="private-sent">
             <p className="sent-title">
-              <LockIcon /> Sent privately · {config.tip.amountEth} ETH
+              <LockIcon /> Sent privately
             </p>
-            <TxHash hash={hash} />
+            <p className="sent-sub">{config.tip.amountEth} ETH from a Privacy Pool. Nothing links it to you.</p>
+            <TxHash hash={hash!} />
           </div>
         ) : (
+          <ul className="private-points">
+            <li>
+              <strong>From your private balance.</strong> Nothing on chain links it to you.
+            </li>
+            <li>
+              <strong>Proved on your device.</strong> Watch the gourd fill.
+            </li>
+            <li>
+              <strong>To a fresh address:</strong>{' '}
+              {res ? <span className="mono" data-testid="private-to">{short(res.address, 10, 8)}</span> : resolving ? 'resolving…' : '—'}
+            </li>
+          </ul>
+        )}
+        {resolveError && <p className="error">Couldn't resolve {name}: {resolveError}</p>}
+        {!done && (
           <button
-            className="btn btn-private btn-lg"
+            className="btn btn-private btn-lg btn-block"
             data-testid="send-private"
             disabled={!res || phase !== 'idle'}
             onClick={() => void send()}
@@ -464,6 +680,14 @@ function PrivateTipScreen({ creator, onBack }: { creator: Creator; onBack: () =>
               </>
             )}
           </button>
+        )}
+        {!done && (
+          <p className="small topup">
+            Private balance empty?{' '}
+            <a href={walletHomeUrl()} target="_blank" rel="noreferrer" data-testid="open-wallet">
+              Move ETH in from your Lowki wallet
+            </a>
+          </p>
         )}
         {error && (
           <p className="error" role="alert" data-testid="private-error">
