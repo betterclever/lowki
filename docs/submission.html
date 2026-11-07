@@ -46,10 +46,12 @@
 <textarea rows="1">Lowki</textarea></section>
 
   <section class="field"><div class="head"><h2>Short description / tagline</h2><span class="meta" data-count></span><button>Copy</button></div>
-<textarea rows="2">Embedded wallets your users actually own: Privy-compatible, keys on device, unlinkable apps, private payments.</textarea></section>
+<textarea rows="2">Embedded wallets your users actually own: a Privy-compatible CROPS wallet SDK built on Kohaku. Keys on device, unlinkable apps, private payments.</textarea></section>
 
   <section class="field"><div class="head"><h2>Description</h2><span class="meta" data-count></span><button>Copy</button></div>
 <textarea rows="22">Embedded wallets made onboarding easy, but at a cost: one company holds a share of every user's keys, sees every app each user signs into, and every app can see the user's whole on-chain history. Lowki keeps the developer experience of Privy and removes the trust.
+
+Lowki is a CROPS wallet SDK (Censorship-resistant, Open source, Private, Secure) built on Kohaku, the Ethereum Foundation's privacy wallet framework. Our Rust key worker implements Kohaku's Host, and Kohaku's Privacy Pools plugin runs on it unchanged, with a WebGPU prover and Anon-RPC transport in place of the defaults.
 
 - Same SDK. @lowki/react-auth implements Privy's React API (PrivyProvider, usePrivy, useWallets, useSignMessage, useSendTransaction…). Moving an app over is one import. Our demo app Lowki Tips was written for Privy; a second app written straight from Privy's docs type-checks against both the real Privy SDK and Lowki.
 - Keys stay on the device. The wallet is created and used inside a Rust/wasm Web Worker and locked with the passkey's WebAuthn PRF output. Sign-up is one passkey: no email, no seed phrase. Our server only stores a blob it can't open, so it can never sign.
@@ -57,12 +59,12 @@
 - Private payments. Tip a creator at chai.lowki.eth: the ENSv2 name resolves to a fresh stealth address on every lookup, verified on chain, so a public name doesn't become a public payment history. Or tip from a private balance through Privacy Pools (via Kohaku), with the zero-knowledge proof made in the browser on WebGPU in ~0.17 s (3.6x faster than snarkjs).
 - Private connection. Wallet reads and broadcasts go through Anon-RPC (Nox / Nym / tor-js), so the RPC provider can't see the user's IP.
 - Get tipped too. Claim your own name.lowki.eth (gas sponsored, live on Sepolia); anyone can pay it from any wallet and only your wallet can find the payments.
-- Open source and self-hostable: one Rust server binary, MIT/Apache-2.0, no third-party scripts or trackers in the client.
+- CROPS by design. Censorship-resistant: self-hostable, plain EOAs, ragequit can't be blocked, stealth addresses verified on chain. Open source: MIT/Apache-2.0, one Rust server binary, no third-party scripts or trackers. Private: per-app wallets, stealth names, Privacy Pools, Anon-RPC. Secure: Rust for every key operation, zeroized secrets, passkey-gated unlock, pinned circuit files.
 
 Live: lowki.eth, its ENSv2 contracts and the creator names are on Sepolia. The private withdrawal runs on a Sepolia fork because Sepolia's Privacy Pools ASP currently publishes placeholder data; the contracts, the proof and Kohaku are real.</textarea></section>
 
   <section class="field"><div class="head"><h2>How it's made</h2><span class="meta" data-count></span><button>Copy</button></div>
-<textarea rows="22">Rust everywhere keys or proofs are involved; TypeScript only as bindings. Each crate is tested against vectors from the reference implementations.
+<textarea rows="22">Built on Kohaku and designed against the CROPS principles. Rust everywhere keys or proofs are involved; TypeScript only as bindings. Each crate is tested against vectors from the reference implementations.
 
 - lowki-keys: BIP-39/32, per-app account derivation, passkey-PRF key wrapping (HKDF -> AES-GCM).
 - lowki-shares: 2-of-3 Shamir, byte-compatible with Privy's shamir-secret-sharing.
@@ -99,7 +101,7 @@ Showcase + live proof race: https://lowki.slopwareinc.xyz/</textarea></section>
 <textarea rows="1">PASTE_VIDEO_LINK_HERE</textarea></section>
 
   <section class="field"><div class="head"><h2>Technologies / tags</h2><button>Copy</button></div>
-<textarea rows="2">Rust, WebAssembly, WebGPU, WGSL, Leptos, React, TypeScript, viem, wagmi, Groth16, circom, Privacy Pools, Kohaku, Anon-RPC, ENSv2, ENSIP-30, CCIP-Read, ERC-5564, ERC-6538, EIP-7702, ERC-4337, WebAuthn PRF, passkeys, Shamir secret sharing, axum, SQLite, Foundry, Sepolia, Cloudflare Tunnel</textarea></section>
+<textarea rows="2">Kohaku, CROPS, Rust, WebAssembly, WebGPU, WGSL, Leptos, React, TypeScript, viem, wagmi, Groth16, circom, Privacy Pools, Anon-RPC, ENSv2, ENSIP-30, CCIP-Read, ERC-5564, ERC-6538, EIP-7702, ERC-4337, WebAuthn PRF, passkeys, Shamir secret sharing, axum, SQLite, Foundry, Sepolia, Cloudflare Tunnel</textarea></section>
 
   <p class="group">Prizes</p>
 
