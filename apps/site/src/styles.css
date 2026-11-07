@@ -11,7 +11,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 html { scroll-snap-type: y proximity; -webkit-text-size-adjust: 100%; }
 @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
-body { margin: 0; background: #07061F; color: var(--cream); font: 400 1rem/1.5 var(--lk-font-text); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+body { margin: 0; background: #0F1B0D; color: var(--cream); font: 400 1rem/1.5 var(--lk-font-text); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
 img { display: block; max-width: 100%; }
 .mono { font-family: var(--lk-font-mono); }
 :focus-visible { outline: 3px solid currentColor; outline-offset: 4px; border-radius: 8px; }
@@ -196,3 +196,30 @@ a.demo[href]:hover { background: rgb(181 242 61 / 0.18); }
   .steps4 li { padding: 16px; min-height: 0; }
   .big, .hero .big { font-size: clamp(2.2rem, 9vw, 3rem); }
 }
+
+/* ---- v4: brand palette, contrast ---- */
+:root:not(.gpu) .s0, :root:not(.gpu) .s9 { background: radial-gradient(80% 80% at 70% 50%, #1F4A14, #0F1B0D 70%); }
+:root:not(.gpu) .s6 { background: radial-gradient(80% 80% at 50% 50%, #1A3310, #050A05 70%); }
+:root:not(.gpu) .s7 { background: linear-gradient(135deg, #FFB000, #FF6A00 50%, #E8336D); }
+.soon { opacity: 0.85; }
+.sub.small { opacity: 1; }
+.facts .copy { background: rgb(255 250 240 / 0.9); color: #1A0612; padding: 28px; border-radius: 28px; }
+.facts .kicker { color: #8A1C3A; opacity: 1; }
+.sees .head span { opacity: 1; }
+.sees .yes { background: #B3123A; color: #fff; }
+.sees .no { background: #B5F23D; color: #0F1B0D; }
+.sees .part { background: #FFB000; color: #1A0612; }
+.st-magenta, .c-magenta { background: #C8155A; color: #fff; }
+.stat em { opacity: 0.9; }
+.c-coral svg, .c-coral b { color: #A3134F; }
+.how .kicker { opacity: 1; }
+.race-ui .big, .race-ui .sub { text-shadow: 0 2px 24px rgb(0 0 0 / 0.7); }
+.side { background: rgb(5 10 5 / 0.78); }
+.x { background: rgb(5 10 5 / 0.82); -webkit-background-clip: border-box; background-clip: border-box; color: var(--lk-lime); padding: 8px 28px 12px; border-radius: 24px; }
+.x:empty { padding: 0; background: none; }
+.ok { color: var(--lk-lime); }
+.race-note { opacity: 1; }
+.btn-glass { background: rgb(5 10 5 / 0.55); color: #F4F7EC; }
+.demo { background: rgb(5 10 5 / 0.55); }
+.audit { opacity: 1; }
+.race-ui .sub { background: rgb(5 10 5 / 0.72); padding: 6px 16px; border-radius: 999px; }
