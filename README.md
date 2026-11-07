@@ -31,7 +31,7 @@ still mocked in the UI. "Status" below says which.
 A walkthrough of 3 minutes or less: _video link to be added_. The flow it shows, all on the
 real backend:
 
-1. An unmodified Privy example app (`examples/privy-swap`) switched to Lowki with one import.
+1. A Privy app written from Privy's docs (`examples/privy-swap`; it type-checks against the real `@privy-io/react-auth`) switched to Lowki with one import.
 2. Sign-up inside the app's iframe: email code, then a passkey (PRF), then the recovery code.
 3. The app gets its own address and pairwise ID; a second app gets different ones from the same
    passkey.

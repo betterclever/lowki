@@ -26,8 +26,8 @@ keys, knows every app each user signs into, and every app can see the user's who
 
 - **Same SDK.** `@lowki/react-auth` implements Privy's React surface: `PrivyProvider`, `usePrivy`,
   `useWallets`, `useSignMessage`, `useSendTransaction`, … To move an app over, change one import.
-  Our demo app, Lowki Tips, was written against Privy, and we also run Privy's own docs example
-  (`examples/privy-swap`) through a one-line alias. App backends verify an ES256 access token
+  Our demo app, Lowki Tips, was written against Privy, and we also run a Privy app written straight from Privy's docs
+  (`examples/privy-swap`) through a one-line alias; the same source type-checks against the real `@privy-io/react-auth`. App backends verify an ES256 access token
   against Lowki's JWKS, as they would Privy's.
 - **Keys on your device.** The seed is generated and used inside a Rust/wasm Web Worker. It is
   wrapped with a key derived from the passkey's WebAuthn PRF output, so the server stores a blob it

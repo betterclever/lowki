@@ -14,10 +14,35 @@
     </script>
     <title>Privy Swap</title>
     <style>
-      body { font: 15px/1.5 system-ui, sans-serif; margin: 24px; max-width: 760px; }
-      pre { white-space: pre-wrap; word-break: break-all; background: #f4f4f6; padding: 6px 8px; min-height: 1em; }
-      button { margin: 6px 6px 0 0; }
-      dd { font-family: ui-monospace, monospace; margin-left: 0; }
+      :root { --ink: #1c1b2e; --muted: #6b6880; --line: #e7e4f0; --card: #ffffff; --accent: #6d4aff; --accent-2: #ff6b8b; --code: #f6f4fb; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; color: var(--ink);
+        font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        background: radial-gradient(1200px 600px at 10% -10%, #efe9ff 0%, transparent 60%),
+                    radial-gradient(900px 500px at 110% 10%, #ffe6ee 0%, transparent 55%), #faf9fd;
+      }
+      #root { max-width: 720px; margin: 0 auto; padding: 48px 20px 64px; display: grid; gap: 20px; }
+      main, section { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 24px; box-shadow: 0 10px 30px -18px rgba(40, 20, 90, .35); }
+      h1 { margin: 0 0 4px; font-size: 30px; letter-spacing: -.02em; background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+      h2, h3 { margin: 0 0 10px; font-size: 17px; }
+      p { margin: 0 0 14px; color: var(--muted); }
+      [data-testid="status"] { display: inline-block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; padding: 3px 10px; border-radius: 999px; background: #eeeaff; color: var(--accent); }
+      dl { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; margin: 4px 0 18px; padding: 16px; background: var(--code); border-radius: 12px; }
+      dt { color: var(--muted); font-size: 13px; }
+      dd { margin: 0; font: 13px/1.5 ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all; }
+      button {
+        appearance: none; border: 0; cursor: pointer; margin: 8px 8px 0 0; padding: 11px 18px; border-radius: 12px;
+        font: 600 14px/1 inherit; color: #fff; background: linear-gradient(135deg, var(--accent), #8d6bff);
+        box-shadow: 0 6px 16px -8px rgba(109, 74, 255, .7); transition: transform .12s ease, box-shadow .12s ease;
+      }
+      button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 20px -10px rgba(109, 74, 255, .8); }
+      button:disabled { opacity: .45; cursor: not-allowed; }
+      [data-testid="logout"] { background: #fff; color: var(--ink); border: 1px solid var(--line); box-shadow: none; }
+      [data-testid="faucet"] { background: linear-gradient(135deg, #12a46b, #2fd08a); box-shadow: 0 6px 16px -8px rgba(18, 164, 107, .7); }
+      pre { white-space: pre-wrap; word-break: break-all; margin: 8px 0 4px; padding: 10px 12px; min-height: 1.2em; background: var(--code); border: 1px solid var(--line); border-radius: 10px; font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace; }
+      pre:empty { display: none; }
+      input, select { font: inherit; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; margin: 6px 6px 0 0; }
     </style>
   </head>
   <body>
