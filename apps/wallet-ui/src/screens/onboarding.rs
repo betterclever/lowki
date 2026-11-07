@@ -59,6 +59,8 @@ pub fn SignIn() -> impl IntoView {
             }
         });
     };
+    // Shown after a sign-in attempt finds no usable passkey (cancelled, none on this device).
+    let offer_create = RwSignal::new(false);
     let passkey = move || {
         err.set(None);
         passkey_busy.set(true);
@@ -71,9 +73,17 @@ pub fn SignIn() -> impl IntoView {
                     c.session.set(Some(s));
                     c.reset(Screen::Home);
                 }
-                Err(e) => err.set(c.fail(e)),
+                Err(e) => {
+                    offer_create.set(true);
+                    err.set(c.fail(e));
+                }
             }
         });
+    };
+    // New users: create a passkey straight away (the server creates the account on finish).
+    let create_new = move || {
+        err.set(None);
+        c.go(Screen::SecureWallet);
     };
     let send_code = move || {
         let addr = email.get_untracked().trim().to_string();
@@ -126,7 +136,13 @@ pub fn SignIn() -> impl IntoView {
                     disabled=move || any_busy.get() aria-busy=move || passkey_busy.get().to_string()
                     on:click=move |_| passkey()>
                     {move || if passkey_busy.get() { view! { <Spinner /> }.into_any() } else { view! { <Icon i=Ic::Passkey /> }.into_any() }}
-                    <span>{move || if passkey_busy.get() { "Waiting for your passkey…" } else { "Continue with passkey" }}</span>
+                    <span>{move || if passkey_busy.get() { "Waiting for your passkey…" } else { "Sign in with passkey" }}</span>
+                </button>
+                <button class=move || if offer_create.get() { "btn primary" } else { "btn secondary" } type="button" data-test="passkey-create"
+                    disabled=move || any_busy.get()
+                    on:click=move |_| create_new()>
+                    <Icon i=Ic::Passkey />
+                    <span>{move || if offer_create.get() { "No passkey yet? Create one" } else { "New here? Create a passkey" }}</span>
                 </button>
                 {move || c.show_google.get().then(|| view! {
                     <button class="btn secondary" type="button" data-test="google"
