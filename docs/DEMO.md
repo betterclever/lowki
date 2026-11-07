@@ -13,7 +13,7 @@ Live URLs right now (rewritten by `scripts/demo-up.sh` every time it runs):
 | Fork RPC (Anon-RPC target) | https://appearing-ban-bizarre-nearby.trycloudflare.com/rpc |
 | ENS gateway (on chain) | https://industry-hobbies-travels-exciting.trycloudflare.com/v1/ens/gateway |
 
-_Written by scripts/demo-up.sh at 2026-11-07T01:53:43Z; Sepolia fork at block 12078882._
+_Written by scripts/demo-up.sh at 2026-11-07T02:00:15Z; Sepolia fork at block 12078882._
 <!-- URLS:END -->
 
 ## 1. Morning steps (about 10 minutes)
@@ -67,7 +67,7 @@ Timestamps are targets. Cut out the waits in editing: the Move in (ASP approval)
 |---|---|---|
 | **0:00 – 0:08** | **Tips tab**, landing page ("Tip your favourite creators"). | "This is Lowki: Privy, but private. Same SDK as Privy, but the keys live on your device, every app gets its own wallet, and payments can be private." |
 | **0:08 – 0:14** | Scroll to the footer: the diff `@privy-io/react-auth` → `@lowki/react-auth`. | "Lowki Tips was written for Privy's React SDK. We changed one import." |
-| **0:14 – 0:38** | **Sign in** → **Continue with email** → type the email → continue → type the code (terminal: `scripts/demo-check.sh code`) → verify → **Use Touch ID** → Touch ID → recovery code → **I've saved it**. | "Sign-in is email plus a passkey. The seed is created in a Rust worker in this browser and wrapped with the passkey's PRF output, so the server never holds a usable key. The recovery code is the third share of a 2-of-3 backup." |
+| **0:14 – 0:38** | **Sign in** → **New here? Create a passkey** → **Use Touch ID** → save to **iCloud Keychain** → Touch ID → you're in (address + user ID in the header). *("Use email instead" exists as a fallback; codes come from `scripts/demo-check.sh code`.)* | "Sign-in is one passkey. No email, no seed phrase. The wallet is created in a Rust worker in this browser and locked with the passkey, so the server never holds a usable key. The passkey syncs with iCloud Keychain; adding an email later turns on recovery." |
 | **0:38 – 0:44** | Hover the header's address / user ID ("Only this app sees this address"). Click **+1 test ETH**. | "Tips gets its own address and a pairwise user ID. On this Sepolia fork, a faucet funds me." |
 | **0:44 – 1:08** | **Chai Stories → Tip 0.01 ETH**: "chai.lowki.eth resolves to 0x…", **Never seen before**. **Send tip** → wallet sheet → **Approve** → "Tip sent". **Tip again** → a different address → **Approve**. Point at "Your tips … All different". | "chai.lowki.eth is an ENSv2 name on Sepolia. Every lookup, here plain viem getEnsAddress, returns a fresh stealth address, verified on chain before the wallet sees it. Tip again: a new address. Nobody can add these up." |
 | **1:08 – 1:22** | **Privy Swap tab** → **Log in** → **Sign in with passkey** → Touch ID. Point at User ID and Wallet. | "This is Privy's own docs example, unmodified apart from the import alias. Same passkey, but a different wallet and a different user ID. The apps can't link me." |

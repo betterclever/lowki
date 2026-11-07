@@ -176,9 +176,9 @@ pub fn SignIn() -> impl IntoView {
                     }.into_any()
                 } else {
                     view! {
-                        <button class="btn secondary" type="button" data-test="email-open" disabled=move || any_busy.get()
+                        <button class="btn quiet" type="button" data-test="email-open" disabled=move || any_busy.get()
                             on:click=move |_| email_open.set(true)>
-                            <Icon i=Ic::Mail /><span>"Continue with email"</span>
+                            <span>"Use email instead"</span>
                         </button>
                     }.into_any()
                 }}
@@ -337,6 +337,8 @@ pub fn SecureWallet() -> impl IntoView {
                     c.recovery_reminder.set(false);
                     finish_sign_in(c);
                 }
+                // Passkey-only sign-up: no recovery code until an email is linked.
+                Ok(code) if code.0.is_empty() => finish_sign_in(c),
                 Ok(code) => {
                     c.recovery_code.set(Some(code));
                     c.go(Screen::Recovery);

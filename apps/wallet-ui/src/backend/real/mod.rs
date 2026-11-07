@@ -420,6 +420,15 @@ impl AuthBackend for RealBackend {
                 wipe(&js::get(&r, k));
             }
             self.put_blob(&cred, &blob).await?;
+            // Passkey-only accounts have no email or Google sign-in to guard the server share,
+            // so there is nothing to recover with yet: the passkey (synced by iCloud Keychain or
+            // Google Password Manager) is the way in. Recovery starts once an email is linked.
+            if self.st.borrow().email.is_none() {
+                let mut st = self.st.borrow_mut();
+                st.code = None;
+                st.recovery = None;
+                return Ok(RecoveryCode(String::new()));
+            }
             self.server
                 .put("/v1/me/share", json!({ "share": codec::b64u(&server_share) }))
                 .await
