@@ -56,7 +56,7 @@ Lowki is a CROPS wallet SDK (Censorship-resistant, Open source, Private, Secure)
 - Same SDK. @lowki/react-auth implements Privy's React API (PrivyProvider, usePrivy, useWallets, useSignMessage, useSendTransaction…). Moving an app over is one import. Our demo app Lowki Tips was written for Privy; a second app written straight from Privy's docs type-checks against both the real Privy SDK and Lowki.
 - Keys stay on the device. The wallet is created and used inside a Rust/wasm Web Worker and locked with the passkey's WebAuthn PRF output. Sign-up is one passkey: no email, no seed phrase. Our server only stores a blob it can't open, so it can never sign.
 - A wallet per app. Every app gets its own address and a pairwise user ID, so apps can't follow users across each other. Only the user's wallet home sees all their apps.
-- Private payments. Tip a creator at chai.lowki.eth: the ENSv2 name resolves to a fresh stealth address on every lookup, verified on chain, so a public name doesn't become a public payment history. Or tip from a private balance through Privacy Pools (via Kohaku), with the zero-knowledge proof made in the browser on WebGPU in ~0.17 s (3.6x faster than snarkjs).
+- Private payments. Tip a creator at chai.lowki.eth: the ENSv2 name resolves to a fresh stealth address on every lookup, verified on chain, so a public name doesn't become a public payment history. Or tip from a private balance through Privacy Pools (via Kohaku), with the proof made on the device.
 - Private connection. Wallet reads and broadcasts go through Anon-RPC (Nox / Nym / tor-js), so the RPC provider can't see the user's IP.
 - Get tipped too. Claim your own name.lowki.eth (gas sponsored, live on Sepolia); anyone can pay it from any wallet and only your wallet can find the payments.
 - CROPS by design. Censorship-resistant: self-hostable, plain EOAs, ragequit can't be blocked, stealth addresses verified on chain. Open source: MIT/Apache-2.0, one Rust server binary, no third-party scripts or trackers. Private: per-app wallets, stealth names, Privacy Pools, Anon-RPC. Secure: Rust for every key operation, zeroized secrets, passkey-gated unlock, pinned circuit files.
@@ -70,18 +70,16 @@ Live: lowki.eth, its ENSv2 contracts and the creator names are on Sepolia. The p
 - lowki-shares: 2-of-3 Shamir, byte-compatible with Privy's shamir-secret-sharing.
 - lowki-stealth: ERC-5564 stealth addresses and scanning (6.2x faster than ScopeLift's SDK in the browser).
 - lowki-pp-core: Privacy Pools v1 notes, Poseidon, LeanIMT.
-- lowki-groth16 + lowki-gpu: a snarkjs-compatible Groth16 prover running on CPU (wasm) and WebGPU (MSMs and NTTs in WGSL compute shaders), byte-identical output, accepted by snarkjs and the on-chain verifier. Withdraw proof in Chrome: 168 ms on WebGPU vs 603 ms for snarkjs with 18 workers. Circuit files are sha256-pinned.
+- lowki-groth16 + lowki-gpu: a snarkjs-compatible Groth16 prover on wasm and WebGPU; proofs are byte-identical and accepted by the on-chain verifier, about 3.6x faster than snarkjs in Chrome.
 - lowki-aa: ERC-4337 / EIP-7702 user operations.
 - lowki-worker: the wasm key worker (unlock with PRF, per-app accounts, signing, proving).
 - lowki-server (axum + sqlx): passkeys via webauthn-rs (including passkeys created inside an app's iframe, accepted only for registered apps), sessions, ES256 app tokens + JWKS (what app backends verify, like Privy's), encrypted app lists, sponsored ENS name claims, and the ENS CCIP-Read gateway.
 - lowki-ens: ENSIP-30 stealth records, CCIP-Read client, registrar/owner-account signatures.
 
-Wallet UI: Leptos (Rust -> wasm) in an iframe/popup on its own origin, strict CSP, bundled fonts.
+Wallet UI: Leptos (Rust -> wasm) in an iframe/popup on its own origin.
 SDK: @lowki/react-auth with Privy's provider, hooks and types, an EIP-1193 provider and a wagmi connector, plus useSendPrivately.
 Kohaku: our Host (network, storage, keystore, provider) backed by the Rust worker; Kohaku's Privacy Pools plugin runs unchanged on top, with its prover swapped for our WebGPU one and its provider carrying Anon-RPC.
 ENSv2 on Sepolia: lowki.eth registered via ETHRegistrar; a VerifiableFactory proxy of ENS's UserRegistryImpl as an emancipated subregistry; LowkiRegistrar for sponsored, owner-signed registrations; an EIP-7702 owner account so the whole name setup is one sponsored transaction; Fluidkey's StealthResolver (ENSIP-30 draft) in verified mode.
-Showcase site: a live proof race on the visitor's GPU with a WebGPU visualization.
-Tested end to end in headless Chrome with a virtual passkey (PRF) and WebGPU.</textarea></section>
 
   <p class="group">Links</p>
 
@@ -95,13 +93,13 @@ Tested end to end in headless Chrome with a virtual passkey (PRF) and WebGPU.</t
 <textarea rows="4">Lowki Tips (demo app): https://lowki-tips.slopwareinc.xyz/
 Privy docs app on Lowki: https://lowki-swap.slopwareinc.xyz/?app=app_30f7d419eb5c11072449&wallet=https%3A%2F%2Flowki-wallet.slopwareinc.xyz%2F%3Fapp_name%3DPrivy%2520Swap
 Lowki wallet: https://lowki-wallet.slopwareinc.xyz/
-Showcase + live proof race: https://lowki.slopwareinc.xyz/</textarea></section>
+Project site: https://lowki.slopwareinc.xyz/</textarea></section>
 
   <section class="field"><div class="head"><h2>Video</h2><button>Copy</button></div>
 <textarea rows="1">PASTE_VIDEO_LINK_HERE</textarea></section>
 
   <section class="field"><div class="head"><h2>Technologies / tags</h2><button>Copy</button></div>
-<textarea rows="2">Kohaku, CROPS, Rust, WebAssembly, WebGPU, WGSL, Leptos, React, TypeScript, viem, wagmi, Groth16, circom, Privacy Pools, Anon-RPC, ENSv2, ENSIP-30, CCIP-Read, ERC-5564, ERC-6538, EIP-7702, ERC-4337, WebAuthn PRF, passkeys, Shamir secret sharing, axum, SQLite, Foundry, Sepolia, Cloudflare Tunnel</textarea></section>
+<textarea rows="2">Kohaku, CROPS, Rust, WebAssembly, WebGPU, Leptos, React, TypeScript, viem, wagmi, Groth16, circom, Privacy Pools, Anon-RPC, ENSv2, ENSIP-30, CCIP-Read, ERC-5564, ERC-6538, EIP-7702, ERC-4337, WebAuthn PRF, passkeys, Shamir secret sharing, axum, SQLite, Foundry, Sepolia</textarea></section>
 
   <p class="group">Prizes</p>
 
