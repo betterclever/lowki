@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lowki · ETHGlobal submission</title>
+<style>
+  :root { --bg:#f6f8ef; --card:#fff; --ink:#0f1b0d; --muted:#5c6a52; --line:#dce4cb; --lime:#b5f23d; --accent:#3f6b12; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0a1109; --card:#111a0f; --ink:#e8efdd; --muted:#9aa88e; --line:#26331f; --accent:#b5f23d; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 16px 80px; display:grid; gap:16px; }
+  h1 { margin:0; font-size:28px; letter-spacing:-.02em; }
+  .lede { color:var(--muted); margin:0 0 8px; }
+  .field { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; display:grid; gap:8px; }
+  .head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .head h2 { margin:0; font-size:15px; }
+  .meta { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+  textarea { width:100%; border:1px solid var(--line); border-radius:10px; padding:10px 12px; font:13.5px/1.5 ui-monospace,"SF Mono",Menlo,monospace; color:var(--ink); background:transparent; resize:vertical; }
+  button { border:0; border-radius:10px; padding:8px 14px; font:600 13px/1 inherit; background:var(--lime); color:#0f1b0d; cursor:pointer; }
+  button.done { background:var(--accent); color:#fff; }
+  .group { margin:16px 0 0; font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+  .check { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 20px; }
+  .check li { margin:4px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Lowki · ETHGlobal Mumbai submission</h1>
+  <p class="lede">Every field below is ready to paste. Click <b>Copy</b>. Fill in the video link once it's uploaded.</p>
+
+  <div class="check">
+    <b>Checklist</b>
+    <ul>
+      <li>Repo is public: https://github.com/betterclever/lowki ✓</li>
+      <li>Live demo: https://lowki.slopwareinc.xyz/ (keep the Mac awake and the tunnel running)</li>
+      <li>Video ≤ 3 min for the EF CROPS prize (edited file: ~/Desktop/lowki-demo-edited.mp4) → upload, then paste the link</li>
+      <li>Prizes: <b>Ethereum Foundation</b> and <b>ENS</b> (Best Use of ENSv2)</li>
+      <li>Logo: lowki/design/logo/lowki-app-icon.svg (export a PNG if the form needs one)</li>
+    </ul>
+  </div>
+
+  <p class="group">Basics</p>
+
+  <section class="field"><div class="head"><h2>Project name</h2><button>Copy</button></div>
+<textarea rows="1">Lowki</textarea></section>
+
+  <section class="field"><div class="head"><h2>Short description / tagline</h2><span class="meta" data-count></span><button>Copy</button></div>
+<textarea rows="2">Embedded wallets your users actually own: Privy-compatible, keys on device, unlinkable apps, private payments.</textarea></section>
+
+  <section class="field"><div class="head"><h2>Description</h2><span class="meta" data-count></span><button>Copy</button></div>
+<textarea rows="22">Embedded wallets made onboarding easy, but at a cost: one company holds a share of every user's keys, sees every app each user signs into, and every app can see the user's whole on-chain history. Lowki keeps the developer experience of Privy and removes the trust.
+
+- Same SDK. @lowki/react-auth implements Privy's React API (PrivyProvider, usePrivy, useWallets, useSignMessage, useSendTransaction…). Moving an app over is one import. Our demo app Lowki Tips was written for Privy; a second app written straight from Privy's docs type-checks against both the real Privy SDK and Lowki.
+- Keys stay on the device. The wallet is created and used inside a Rust/wasm Web Worker and locked with the passkey's WebAuthn PRF output. Sign-up is one passkey: no email, no seed phrase. Our server only stores a blob it can't open, so it can never sign.
+- A wallet per app. Every app gets its own address and a pairwise user ID, so apps can't follow users across each other. Only the user's wallet home sees all their apps.
+- Private payments. Tip a creator at chai.lowki.eth: the ENSv2 name resolves to a fresh stealth address on every lookup, verified on chain, so a public name doesn't become a public payment history. Or tip from a private balance through Privacy Pools (via Kohaku), with the zero-knowledge proof made in the browser on WebGPU in ~0.17 s (3.6x faster than snarkjs).
+- Private connection. Wallet reads and broadcasts go through Anon-RPC (Nox / Nym / tor-js), so the RPC provider can't see the user's IP.
+- Get tipped too. Claim your own name.lowki.eth (gas sponsored, live on Sepolia); anyone can pay it from any wallet and only your wallet can find the payments.
+- Open source and self-hostable: one Rust server binary, MIT/Apache-2.0, no third-party scripts or trackers in the client.
+
+Live: lowki.eth, its ENSv2 contracts and the creator names are on Sepolia. The private withdrawal runs on a Sepolia fork because Sepolia's Privacy Pools ASP currently publishes placeholder data; the contracts, the proof and Kohaku are real.</textarea></section>
+
+  <section class="field"><div class="head"><h2>How it's made</h2><span class="meta" data-count></span><button>Copy</button></div>
+<textarea rows="22">Rust everywhere keys or proofs are involved; TypeScript only as bindings. Each crate is tested against vectors from the reference implementations.
+
+- lowki-keys: BIP-39/32, per-app account derivation, passkey-PRF key wrapping (HKDF -> AES-GCM).
+- lowki-shares: 2-of-3 Shamir, byte-compatible with Privy's shamir-secret-sharing.
+- lowki-stealth: ERC-5564 stealth addresses and scanning (6.2x faster than ScopeLift's SDK in the browser).
+- lowki-pp-core: Privacy Pools v1 notes, Poseidon, LeanIMT.
+- lowki-groth16 + lowki-gpu: a snarkjs-compatible Groth16 prover running on CPU (wasm) and WebGPU (MSMs and NTTs in WGSL compute shaders), byte-identical output, accepted by snarkjs and the on-chain verifier. Withdraw proof in Chrome: 168 ms on WebGPU vs 603 ms for snarkjs with 18 workers. Circuit files are sha256-pinned.
+- lowki-aa: ERC-4337 / EIP-7702 user operations.
+- lowki-worker: the wasm key worker (unlock with PRF, per-app accounts, signing, proving).
+- lowki-server (axum + sqlx): passkeys via webauthn-rs (including passkeys created inside an app's iframe, accepted only for registered apps), sessions, ES256 app tokens + JWKS (what app backends verify, like Privy's), encrypted app lists, sponsored ENS name claims, and the ENS CCIP-Read gateway.
+- lowki-ens: ENSIP-30 stealth records, CCIP-Read client, registrar/owner-account signatures.
+
+Wallet UI: Leptos (Rust -> wasm) in an iframe/popup on its own origin, strict CSP, bundled fonts.
+SDK: @lowki/react-auth with Privy's provider, hooks and types, an EIP-1193 provider and a wagmi connector, plus useSendPrivately.
+Kohaku: our Host (network, storage, keystore, provider) backed by the Rust worker; Kohaku's Privacy Pools plugin runs unchanged on top, with its prover swapped for our WebGPU one and its provider carrying Anon-RPC.
+ENSv2 on Sepolia: lowki.eth registered via ETHRegistrar; a VerifiableFactory proxy of ENS's UserRegistryImpl as an emancipated subregistry; LowkiRegistrar for sponsored, owner-signed registrations; an EIP-7702 owner account so the whole name setup is one sponsored transaction; Fluidkey's StealthResolver (ENSIP-30 draft) in verified mode.
+Showcase site: a live proof race on the visitor's GPU with a WebGPU visualization.
+Tested end to end in headless Chrome with a virtual passkey (PRF) and WebGPU.</textarea></section>
+
+  <p class="group">Links</p>
+
+  <section class="field"><div class="head"><h2>GitHub repository</h2><button>Copy</button></div>
+<textarea rows="1">https://github.com/betterclever/lowki</textarea></section>
+
+  <section class="field"><div class="head"><h2>Live demo</h2><button>Copy</button></div>
+<textarea rows="1">https://lowki.slopwareinc.xyz/</textarea></section>
+
+  <section class="field"><div class="head"><h2>Demo apps (if there's a field for extra links)</h2><button>Copy</button></div>
+<textarea rows="4">Lowki Tips (demo app): https://lowki-tips.slopwareinc.xyz/
+Privy docs app on Lowki: https://lowki-swap.slopwareinc.xyz/?app=app_30f7d419eb5c11072449&wallet=https%3A%2F%2Flowki-wallet.slopwareinc.xyz%2F%3Fapp_name%3DPrivy%2520Swap
+Lowki wallet: https://lowki-wallet.slopwareinc.xyz/
+Showcase + live proof race: https://lowki.slopwareinc.xyz/</textarea></section>
+
+  <section class="field"><div class="head"><h2>Video</h2><button>Copy</button></div>
+<textarea rows="1">PASTE_VIDEO_LINK_HERE</textarea></section>
+
+  <section class="field"><div class="head"><h2>Technologies / tags</h2><button>Copy</button></div>
+<textarea rows="2">Rust, WebAssembly, WebGPU, WGSL, Leptos, React, TypeScript, viem, wagmi, Groth16, circom, Privacy Pools, Kohaku, Anon-RPC, ENSv2, ENSIP-30, CCIP-Read, ERC-5564, ERC-6538, EIP-7702, ERC-4337, WebAuthn PRF, passkeys, Shamir secret sharing, axum, SQLite, Foundry, Sepolia, Cloudflare Tunnel</textarea></section>
+
+  <p class="group">Prizes</p>
+
+  <section class="field"><div class="head"><h2>Ethereum Foundation: how we used it (CROPS / Anon-RPC / Kohaku)</h2><span class="meta" data-count></span><button>Copy</button></div>
+<textarea rows="14">Lowki is a CROPS wallet SDK built on Kohaku.
+- Private: keys never leave the device (Rust/wasm worker, passkey PRF); a wallet and pairwise ID per app so apps can't link users; private payments through Kohaku's Privacy Pools plugin; ENS stealth names. The README has a per-party table of exactly what the app, our server, the RPC, relayer, ASP, ENS gateway and the chain can and can't learn, including our gaps.
+- Kohaku: our Host implementation is backed by the Rust key worker; Kohaku's Privacy Pools plugin runs unchanged on it, and we replaced its prover with a WebGPU Groth16 that is 3.6x faster than snarkjs (byte-identical proofs, accepted by the on-chain verifier).
+- Anon-RPC: wallet reads, broadcasts, ASP fetches and relayer calls go through Anon-RPC by default (Nox on Chromium, Nym on Safari, tor-js optional), one isolated session per app address; the wallet shows "Private connection ... exit <ip>".
+- Censorship resistant: everything is self-hostable, addresses are plain EOAs, ragequit can't be blocked, ENS stealth addresses are verified on chain so the gateway can't redirect funds.
+- Open source: MIT/Apache-2.0; no third-party scripts, fonts or trackers in the client.
+- Secure: Rust for every key operation, zeroized secrets, passkey-gated unlock, pinned circuit artifacts.
+Repo: https://github.com/betterclever/lowki (README "CROPS" section)</textarea></section>
+
+  <section class="field"><div class="head"><h2>ENS: how we used ENSv2 (Best Use of ENSv2)</h2><span class="meta" data-count></span><button>Copy</button></div>
+<textarea rows="16">ENSv2 is central to Lowki: payment names that can't be turned into a payment history.
+Live on Sepolia (ENSv2 deployment 2026-10-01):
+- lowki.eth subregistry (VerifiableFactory proxy of ENS's UserRegistryImpl, emancipated): 0xEEF136dcce9AE2130028990f28eD260f11A1BDB3
+- LowkiRegistrar (sponsored, owner-signed EIP-712 registrations): 0xB5CbecBd2a52C76cdceb65DdCc3bf8f4d924c03e
+- LowkiOwnerAccount (EIP-7702 delegate, whole name setup in one sponsored tx): 0x8Ed05C155ABB6aef00481Ca6aEc2Fc4815089228
+- StealthResolver (Fluidkey, ENSIP-30 draft, verified mode): 0xb78F3D4F40Eb9b28139cc116A94d79F976da1Dc6
+- Names: chai.lowki.eth, tabla.lowki.eth, pixel.lowki.eth; users claim their own from the Lowki wallet.
+How: every lookup (plain viem getEnsAddress, i.e. any wallet) hits OffchainLookup -> our gateway derives a fresh ERC-5564 stealth address -> StealthResolver re-derives it on chain from the name's published meta-address and reverts if the gateway lied. The name owner deploys their own PermissionedResolver via VerifiableFactory and holds ROLE_SET_RESOLVER/ROLE_SET_SUBREGISTRY; the operator can't touch a registered name (EAC roles, emancipated registry). Registration and setup are fully sponsored, so the owner key never holds ETH. The recipient's wallet finds payments with its viewing key.
+Try it: getEnsAddress({ name: 'chai.lowki.eth' }) on Sepolia returns a new verified address every call.
+37 Foundry tests + an end-to-end run on a Sepolia fork with the real ENSv2 contracts, plus the live deployment.</textarea></section>
+
+  <p class="group">If asked</p>
+
+  <section class="field"><div class="head"><h2>Known limitations (honest notes)</h2><button>Copy</button></div>
+<textarea rows="5">- The private withdrawal runs on a Sepolia fork: Sepolia's Privacy Pools ASP publishes placeholder data, so no withdrawal can prove ASP membership there today (evidence in docs/PRIVATE-SEND.md). ENS names and contracts are live on Sepolia.
+- The live demo is served from a laptop through a Cloudflare tunnel; the ENS gateway runs there too.
+- Delegated (server-side) signing is designed and partly built, not part of the demo.
+- Not audited.</textarea></section>
+</main>
+<script>
+  document.querySelectorAll('.field').forEach((f) => {
+    const ta = f.querySelector('textarea'), btn = f.querySelector('button'), meta = f.querySelector('[data-count]');
+    const count = () => { if (meta) meta.textContent = ta.value.length + ' chars'; };
+    count(); ta.addEventListener('input', count);
+    btn.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(ta.value); }
+      catch { ta.select(); document.execCommand('copy'); }
+      btn.textContent = 'Copied'; btn.classList.add('done');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1400);
+    });
+  });
+</script>
+</body>
+</html>
