@@ -13,7 +13,7 @@ Live URLs right now (rewritten by `scripts/demo-up.sh` every time it runs):
 | Fork RPC (Anon-RPC target) | https://appearing-ban-bizarre-nearby.trycloudflare.com/rpc |
 | ENS gateway (on chain) | https://industry-hobbies-travels-exciting.trycloudflare.com/v1/ens/gateway |
 
-_Written by scripts/demo-up.sh at 2026-11-07T02:00:15Z; Sepolia fork at block 12078882._
+_Written by scripts/demo-up.sh at 2026-11-07T02:06:35Z; Sepolia fork at block 12078882._
 <!-- URLS:END -->
 
 ## 1. Morning steps (about 10 minutes)
@@ -65,7 +65,7 @@ Timestamps are targets. Cut out the waits in editing: the Move in (ASP approval)
 
 | Time | Screen and clicks | Voiceover |
 |---|---|---|
-| **0:00 – 0:08** | **Tips tab**, landing page ("Tip your favourite creators"). | "This is Lowki: Privy, but private. Same SDK as Privy, but the keys live on your device, every app gets its own wallet, and payments can be private." |
+| **0:00 – 0:08** | **Tips tab**, landing page ("Tip your favourite creators"). | "This is Lowki: embedded wallets your users actually own. Drop-in for Privy, but the keys live on the device, every app gets its own wallet, and payments can be private." |
 | **0:08 – 0:14** | Scroll to the footer: the diff `@privy-io/react-auth` → `@lowki/react-auth`. | "Lowki Tips was written for Privy's React SDK. We changed one import." |
 | **0:14 – 0:38** | **Sign in** → **New here? Create a passkey** → **Use Touch ID** → save to **iCloud Keychain** → Touch ID → you're in (address + user ID in the header). *("Use email instead" exists as a fallback; codes come from `scripts/demo-check.sh code`.)* | "Sign-in is one passkey. No email, no seed phrase. The wallet is created in a Rust worker in this browser and locked with the passkey, so the server never holds a usable key. The passkey syncs with iCloud Keychain; adding an email later turns on recovery." |
 | **0:38 – 0:44** | Hover the header's address / user ID ("Only this app sees this address"). Click **+1 test ETH**. | "Tips gets its own address and a pairwise user ID. On this Sepolia fork, a faucet funds me." |
