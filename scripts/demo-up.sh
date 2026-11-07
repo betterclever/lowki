@@ -242,6 +242,16 @@ tunnel() {
   mac sh -lc "nohup cloudflared tunnel --no-autoupdate --url http://localhost:$port > '$RUN/tunnel-$name.log' 2>&1 < /dev/null & echo \$!" >"$RUN/tunnel-$name.pid"
   echo "   tunnel $name -> :$port started (Mac pid $(cat "$RUN/tunnel-$name.pid"))"
 }
+if [ -n "${PUBLIC_DOMAIN:-}" ]; then
+  # Fixed hostnames through a named Cloudflare tunnel (see ~/.cloudflared/lowki.yml on the Mac):
+  # site at $PUBLIC_DOMAIN, the rest at lowki-<name>.<parent domain>.
+  say "named tunnel hostnames ($PUBLIC_DOMAIN)"
+  PARENT="${PUBLIC_DOMAIN#*.}"
+  FORK_PUB="https://lowki-rpc.$PARENT" WALLET_PUB="https://lowki-wallet.$PARENT" TIPS_PUB="https://lowki-tips.$PARENT"
+  PRIVY_PUB="https://lowki-swap.$PARENT" SITE_PUB="https://$PUBLIC_DOMAIN"
+  WALLET_HOST="${WALLET_PUB#https://}"
+  for v in "$FORK_PUB" "$WALLET_PUB" "$TIPS_PUB" "$PRIVY_PUB" "$SITE_PUB"; do echo "   $v"; done
+else
 say "Cloudflare quick tunnels on the Mac"
 command -v mac >/dev/null && mac sh -lc 'command -v cloudflared' >/dev/null || die "cloudflared not found on the Mac"
 for t in fork:$P_GATEWAY wallet:$P_WALLET tips:$P_TIPS privy:$P_PRIVY site:$P_SITE; do tunnel "${t%%:*}" "${t##*:}"; done
@@ -252,6 +262,7 @@ done
 FORK_PUB="$(tunnel_url fork)" WALLET_PUB="$(tunnel_url wallet)" TIPS_PUB="$(tunnel_url tips)" PRIVY_PUB="$(tunnel_url privy)" SITE_PUB="$(tunnel_url site)"
 WALLET_HOST="${WALLET_PUB#https://}"
 for t in fork wallet tips privy site; do echo "   $t: $(tunnel_url $t)"; done
+fi
 
 # ------------------------------------------------------------------------------ fork gateway (ASP + relayer)
 say "fork gateway :$P_GATEWAY (rpc, ip, ASP, relayer)"
