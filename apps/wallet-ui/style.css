@@ -76,7 +76,9 @@ h1:focus, h1:focus-visible { outline: none; }
 
 .sheet-body { padding: var(--lk-space-4) var(--lk-space-6) var(--lk-space-6); display: flex; flex-direction: column; gap: var(--lk-space-4); }
 
-@media (max-width: 480px) {
+/* Bottom sheet only on touch phones (or very narrow windows). On desktop the SDK's iframe is
+   ~440px wide, which must still get the centred dialog. */
+@media (max-width: 480px) and (pointer: coarse), (max-width: 360px) {
   .stage { padding: var(--lk-space-6) 0 0; align-items: flex-end; }
   #main { max-width: none; }
   .sheet { border-radius: var(--lk-radius-lg) var(--lk-radius-lg) 0 0; }
