@@ -389,7 +389,7 @@ start tips $P_TIPS env PORT=$P_TIPS ROOT="$LIVE/tips-dist" RPC="$ANVIL_RPC" \
 
 # ------------------------------------------------------------------------------ privy-swap :8857
 say "privy-swap :$P_PRIVY"
-start privy $P_PRIVY env PORT=$P_PRIVY ROOT="$LIVE/privy-dist" node "$BIN/serve.mjs"
+start privy $P_PRIVY env PORT=$P_PRIVY ROOT="$LIVE/privy-dist" RPC="http://127.0.0.1:$P_ANVIL" RPC_ALLOW='^anvil_setBalance$' node "$BIN/serve.mjs"
 PRIVY_URL="$PRIVY_PUB/?app=$PRIVY_APP&wallet=$(jq -rn --arg w "$WALLET_PUB/?app_name=Privy%20Swap" '$w|@uri')"
 
 # ------------------------------------------------------------------------------ showcase site :8858
