@@ -67,7 +67,18 @@ impl Server {
 
     /// Returns the JSON body for 2xx (202 included).
     pub async fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value, ServerError> {
-        let (status, v) = self.raw(method, path, body.as_ref()).await?;
+        // A session cookie can outlive this page (reload, earlier sign-in) while its CSRF token,
+        // kept only in memory, doesn't. Ask the server for it before the first state change.
+        if method != "GET" && self.csrf.borrow().is_none() {
+            self.refresh_csrf().await;
+        }
+        let (mut status, mut v) = self.raw(method, path, body.as_ref()).await?;
+        if status == 403 && is_csrf_error(&v) {
+            // Stale token (the session changed underneath us): refresh once and retry.
+            self.set_csrf(None);
+            self.refresh_csrf().await;
+            (status, v) = self.raw(method, path, body.as_ref()).await?;
+        }
         if !(200..300).contains(&status) {
             return Err(ServerError::Status {
                 status,
@@ -77,6 +88,13 @@ impl Server {
         }
         self.note(&v);
         Ok(v)
+    }
+
+    /// Picks up the CSRF token of the current session cookie, if there is one.
+    async fn refresh_csrf(&self) {
+        if let Ok((200, v)) = self.raw("GET", "/v1/session", None).await {
+            self.note(&v);
+        }
     }
 
     async fn raw(&self, method: &str, path: &str, body: Option<&Value>) -> Result<(u16, Value), ServerError> {
@@ -115,4 +133,10 @@ impl Server {
         let v: Value = serde_json::from_str(&text).map_err(|_| ServerError::Network)?;
         Ok((status, v))
     }
+}
+
+/// lowki-server answers a bad or missing `x-lowki-csrf` with 403 and this message.
+fn is_csrf_error(v: &Value) -> bool {
+    let has = |k: &str| v.get(k).and_then(Value::as_str).is_some_and(|s| s.to_ascii_lowercase().contains("csrf"));
+    has("error") || has("message")
 }
