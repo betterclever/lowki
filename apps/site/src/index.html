@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lowki · keys stay home</title>
+<title>Lowki · wallets your users own</title>
 <meta name="description" content="Lowki: the drop-in Privy wallet where keys stay on the device, apps can't follow users, and payments can be private. Prove a private payment right here.">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#07061F">
@@ -22,67 +22,44 @@
 </header>
 
 <main>
-  <section class="scene s0 ink-light" id="top" data-scene="0">
+  <section class="scene s0 ink-light hero" id="top" data-scene="0">
     <div class="copy">
-      <h1 class="mega">Keys<br>stay<br>home.</h1>
-      <p class="sub">The wallet SDK your users actually own. Drop-in for Privy.</p>
+      <p class="kicker">Lowki</p>
+      <h1 class="big">Embedded wallets your users actually own.</h1>
+      <p class="sub">Drop-in for Privy. Keys stay on the device. Apps can't follow users. Payments can be private.</p>
       <div class="ctas">
         <a class="btn btn-lime" href="#prove">Prove it</a>
-        <a class="btn btn-glass" data-link="video" href="#end">Watch the demo<span class="soon" hidden> · soon</span></a>
+        <a class="btn btn-glass" data-link="video" href="#end">Watch the demo<span class="soon" hidden>soon</span></a>
       </div>
     </div>
     <div class="art"><img class="fallback-art" src="logo/lowki-mark-night.svg" alt=""></div>
   </section>
 
-  <section class="scene s1 ink-dark" data-scene="1">
-    <div class="copy">
-      <h2 class="big">Not even we can sign.</h2>
-      <p class="sub">The seed lives on the device, sealed by a passkey.</p>
-    </div>
-    <div class="art"></div>
-  </section>
-
-  <section class="scene s2 ink-light" data-scene="2">
-    <div class="copy">
-      <h2 class="big">Swap one import.</h2>
-      <div class="diff mono" aria-label="Change @privy-io/react-auth to @lowki/react-auth">
-        <div class="del"><span>−</span>from '@privy-io/react-auth'</div>
-        <div class="add"><span>+</span>from '<b>@lowki/react-auth</b>'</div>
+  <section class="scene s1 ink-dark how" id="how" data-scene="1">
+    <div class="how-head">
+      <div class="copy">
+        <p class="kicker">How it works</p>
+        <h2 class="big">Same SDK. Different promise.</h2>
+        <div class="diff mono" aria-label="Change @privy-io/react-auth to @lowki/react-auth">
+          <div class="del"><span>−</span>import { usePrivy } from '@privy-io/react-auth'</div>
+          <div class="add"><span>+</span>import { usePrivy } from '<b>@lowki/react-auth</b>'</div>
+        </div>
       </div>
-      <p class="sub">Same hooks. Same types. Same app.</p>
+      <div class="art art-small"></div>
     </div>
-    <div class="art"></div>
-  </section>
-
-  <section class="scene s3 ink-dark" data-scene="3">
-    <div class="copy">
-      <h2 class="big">Every app, a&nbsp;stranger.</h2>
-      <p class="sub">A separate wallet and ID per app. Nobody follows your users.</p>
-    </div>
-    <div class="art"></div>
-  </section>
-
-  <section class="scene s4 ink-light" data-scene="4">
-    <div class="copy">
-      <h2 class="big">Pay. Leave no&nbsp;trail.</h2>
-      <p class="sub"><span class="warm">Public in</span>, <span class="lime">private out</span>. Privacy Pools, proved on the device.</p>
-    </div>
-    <div class="art"></div>
-  </section>
-
-  <section class="scene s5 ink-light" data-scene="5">
-    <div class="copy">
-      <h2 class="big">One name. Endless addresses.</h2>
-      <p class="sub"><b class="mono">alice.lowki.eth</b> gets paid at a fresh address every time. Live on Sepolia.</p>
-    </div>
-    <div class="art"></div>
+    <ol class="steps4">
+      <li class="c-ink"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="3"/><circle cx="12" cy="10.5" r="2"/><path d="M11.2 12.3 10.6 16h2.8l-.6-3.7"/></svg><b>Keys on the device</b><span>A passkey unlocks a key that lives on the user's device. The server can't sign.</span></li>
+      <li class="c-magenta"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg><b>A wallet per app</b><span>Every app gets its own wallet and user ID. Apps can't follow users.</span></li>
+      <li class="c-green"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M2 8h5M2 16h5M17 6l5-2M17 18l5 2"/></svg><b>Pay privately</b><span>Shield and withdraw through Privacy Pools (Kohaku), proved in the browser.</span></li>
+      <li class="c-coral"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12 4 5M12 12l8-7M12 12l-8 7M12 12l8 7M12 12V3M12 12v9"/><circle cx="12" cy="12" r="2.5"/></svg><b>Get paid at a name</b><span><code>alice.lowki.eth</code> resolves to a fresh address every time. Live on Sepolia.</span></li>
+    </ol>
   </section>
 
   <section class="scene s6 ink-light race" id="prove" data-scene="6">
     <div class="art art-full"></div>
     <div class="race-ui" id="race" data-state="idle">
-      <h2 class="big">Prove it. Here.</h2>
-      <p class="sub">A real private payment proof, made on this device.</p>
+      <h2 class="big">Prove it, right here.</h2>
+      <p class="sub">A real Privacy Pools withdrawal proof, made on this device. Then snarkjs makes the same one.</p>
       <div class="duel">
         <div class="side side-lowki">
           <span class="who">Lowki <i class="tag" id="lowki-tag">WebGPU</i></span>
@@ -101,10 +78,13 @@
     </div>
   </section>
 
-  <section class="scene s7 ink-light" id="who" data-scene="7">
-    <div class="copy wide">
-      <h2 class="big">Who sees what.</h2>
-      <div class="sees" role="table" aria-label="What each party can see">
+  <section class="scene s7 ink-light facts" id="who" data-scene="7">
+    <div class="art art-full"></div>
+    <div class="facts-grid">
+      <div class="copy">
+        <p class="kicker">Privacy</p>
+        <h2 class="big">Who sees what.</h2>
+        <div class="sees" role="table" aria-label="What each party can see">
         <div class="row head" role="row"><span role="columnheader"></span><span role="columnheader">Keys</span><span role="columnheader">Other apps</span><span role="columnheader">Email</span><span role="columnheader">Who paid whom</span></div>
         <div class="row" role="row"><span role="rowheader">The app</span><i class="no" role="cell">No</i><i class="no" role="cell">No</i><i class="no" role="cell">No</i><i class="no" role="cell">No</i></div>
         <div class="row" role="row"><span role="rowheader">Lowki server</span><i class="no" role="cell">No</i><i class="yes" role="cell">Yes</i><i class="part" role="cell">Hashed</i><i class="no" role="cell">No</i></div>
@@ -113,33 +93,32 @@
         <div class="row" role="row"><span role="rowheader">ENS gateway</span><i class="no" role="cell">No</i><i class="no" role="cell">No</i><i class="no" role="cell">No</i><i class="part" role="cell">Its names</i></div>
         <div class="row" role="row"><span role="rowheader">The chain</span><i class="no" role="cell">No</i><i class="no" role="cell">No</i><i class="no" role="cell">No</i><i class="no" role="cell">No</i></div>
       </div>
-      <p class="sub small">Our gaps are in colour. Full CROPS write-up in the README.</p>
-    </div>
-    <div class="art art-full"></div>
-  </section>
-
-  <section class="scene s8 ink-dark" id="numbers" data-scene="8">
-    <div class="copy wide">
-      <h2 class="big">Fast where it counts.</h2>
-      <div class="stats">
+        <p class="sub small">Gaps in colour. Full CROPS write-up in the README.</p>
+      </div>
+      <div class="copy" id="numbers">
+        <p class="kicker">Benchmarks</p>
+        <h2 class="big">Fast where it counts.</h2>
+        <div class="stats">
         <div class="stat st-ink"><b>3.6×</b><span>private proof<br><em>168 ms vs 603 ms</em></span></div>
         <div class="stat st-magenta"><b>6.2×</b><span>stealth scan<br><em>0.53 s vs 3.24 s</em></span></div>
         <div class="stat st-teal"><b>4.7×</b><span>key derivation<br><em>0.89 ms vs 4.18 ms</em></span></div>
         <div class="stat st-white"><b>768<small>KiB</small></b><span>the whole SDK<br><em>gzip, vs 804 KiB</em></span></div>
       </div>
-      <p class="sub small">Apple M5 Max, Chrome 156, against snarkjs, ScopeLift and Kohaku. Signing is 1.9× slower than noble; we say so.</p>
+        <p class="sub small">Apple M5 Max, Chrome 156, vs snarkjs, ScopeLift and Kohaku. Signing is 1.9× slower than noble.</p>
+      </div>
     </div>
-    <div class="art art-full"></div>
   </section>
 
   <section class="scene s9 ink-light" id="end" data-scene="9">
     <div class="copy">
-      <h2 class="mega">Own it.</h2>
+      <p class="kicker">Get started</p>
+      <h2 class="big">Try it live.</h2>
       <ul class="demos" id="demo-list"></ul>
       <div class="ctas">
-        <a class="btn btn-lime" data-link="video" href="#end">Watch the demo<span class="soon" hidden> · soon</span></a>
-        <a class="btn btn-glass" data-link="repo" href="#end">Code<span class="soon" hidden> · soon</span></a>
+        <a class="btn btn-lime" data-link="video" href="#end">Watch the demo<span class="soon" hidden>soon</span></a>
+        <a class="btn btn-glass" data-link="repo" href="#end">GitHub<span class="soon" hidden>soon</span></a>
       </div>
+      <p class="pillars mono">open source · self-hostable · Rust core</p>
       <p class="audit mono" id="audit"><i></i><span>Third-party requests from this page: <b id="audit-n">0</b></span></p>
     </div>
     <div class="art"><img class="fallback-art" src="logo/lowki-mark-night.svg" alt=""></div>

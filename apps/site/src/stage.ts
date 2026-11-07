@@ -431,12 +431,14 @@ export async function startStage(cv: HTMLCanvasElement, scenes: HTMLElement[], s
     const sb = Math.min(scenes.length - 1, sa + 1);
     const f = sf - sa;
     const slot = (k: number) => rectOf(scenes[k].querySelector<HTMLElement>(".art") ?? scenes[k]);
-    mouseOn += (mouseTarget * (sa === 0 || sa === 9 ? 1 : 0.6) - mouseOn) * 0.08;
+    const sid = (k: number) => Number(scenes[k].dataset.scene ?? k);
+    mouseOn += (mouseTarget * (sid(sa) === 0 || sid(sa) === 9 ? 1 : 0.6) - mouseOn) * 0.08;
     const motion = reducedMotion() ? 0 : 1;
     const burst = race.burst >= 0 ? (now - race.burstAt) / 1000 : 0;
-    const rs = rectOf(scenes[6].querySelector<HTMLElement>(".art") ?? scenes[6]);
+    const raceScene = scenes.find((x) => x.dataset.scene === "6") ?? scenes[0];
+    const rs = rectOf(raceScene.querySelector<HTMLElement>(".art") ?? raceScene);
     const dens = Math.min(1, Math.max(0.45, (innerWidth * innerHeight) / (1300 * 820)));
-    u.set([innerWidth, innerHeight, (now - t0) / 1000, f, ...slot(sa), ...slot(sb), sa, sb, dpr, motion, mouse[0], mouse[1], mouseOn, ndraw,
+    u.set([innerWidth, innerHeight, (now - t0) / 1000, f, ...slot(sa), ...slot(sb), sid(sa), sid(sb), dpr, motion, mouse[0], mouse[1], mouseOn, ndraw,
       race.r0, race.r1, race.rp, burst > 6 ? 0 : burst, race.download, dens, rs[0] + rs[2] / 2, rs[1] + rs[3] / 2]);
     dev.queue.writeBuffer(ubuf, 0, u);
     const enc = dev.createCommandEncoder();

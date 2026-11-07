@@ -147,7 +147,7 @@ for (const c of configs) {
     console.log("  screencast frames", fi);
   }
   if (NO_RACE) continue;
-  await evaluate(`window.scrollTo(0, ${tops[6]})`);
+  await evaluate("window.scrollTo(0, document.getElementById('prove').offsetTop)");
   await sleep(1500);
   await evaluate("document.getElementById('race-btn').click()");
   await waitFor("document.getElementById('lowki-ok') && document.getElementById('lowki-time').textContent !== '0.00' && document.getElementById('race-btn').querySelector('.label').textContent === 'Proving'", 120000);
