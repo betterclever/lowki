@@ -692,6 +692,18 @@ pub async fn setup(
         .await
         .map_err(upstream)?;
     let records_resolver: Address = predicted.get(12..32).and_then(|b| b.try_into().ok()).ok_or_else(ApiError::internal)?;
+    // Idempotent: if an earlier setup landed but its result was never recorded (a restart
+    // mid-request), the owner's records resolver already exists. Don't resend stale nonces.
+    let deployed = rpc(&state, &gw.rpc_url, "eth_getCode", json!([h0x(&records_resolver), "latest"]))
+        .await
+        .ok()
+        .and_then(|v| v.as_str().map(|c| c.len() > 2))
+        .unwrap_or(false);
+    if deployed {
+        set_status(&state, &s.user_id, "ready", None).await?;
+        crate::audit::record(&state, Some(&s.user_id), "name.ready", json!({ "tx": null, "recovered": true })).await;
+        return Ok(Json(row_json(&row(&state, &s.user_id).await?.ok_or_else(ApiError::internal)?, &gw.parent)));
+    }
     let calls = owner_setup_calls(&n.config, &stealth_resolver, &name, &owner, &meta, &records_resolver)
         .map_err(|_| ApiError::internal())?;
     let sig = bytes_param(&req.execute_signature, "execute_signature")?;
